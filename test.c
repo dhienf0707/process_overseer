@@ -1,41 +1,37 @@
 #include <getopt.h>
-#include <zconf.h>
-#include <z3.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <memory.h>
-
-void print_usage(char *);
+#include <helpers.h>
+#include <unistd.h>
 
 //
 // Created by duchi on 9/19/2020.
 //
-typedef struct flag {
-    int i; /* position of the flag */
-    char *value; /* value of the flag */
-} flag;
 
 void test_func(int *);
 
 int main(int argc, char **argv) {
+    char buffer[26];
+    char *args[8] = {"./controller/controller", "localhost", "3000", "-o", "outfile", "hello", "0", NULL};
+    pid_t pid;
 
-    int *a = (int *) malloc(sizeof(int));
-    *a = 10;
-    test_func(a);
-    printf("%d\n", *a);
+    pid = fork();
+    if (pid == 0) goto fork2;
+    else args[6] = "1";
+
+    fork2: { pid = fork(); };
+    if (pid == 0) goto fork3;
+    else args[6] = "2";
+
+    fork3: { fork(); };
+
+    execv(args[0], args);
+
+    exit(1);
 }
 
 void test_func(int *ptr) {
     ptr = (int *) malloc(sizeof(int));
     *ptr = 15;
-}
-
-void print_usage(char *type) {
-    char *msg = "Usage: controller <address> <port> "
-                "{[-o out_file] [-log log_file] [-t seconds] <file> [arg...] | "
-                "mem [pid] | memkill <percent>}\n";
-    if (strcmp(type, "help") == 0) {
-        printf("%s", msg);
-    } else {
-        fprintf(stderr, "%s", msg);
-    }
 }

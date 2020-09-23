@@ -4,10 +4,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <memory.h>
 #include <netdb.h>
 #include <getopt.h>
 #include <helpers.h>
+#include <time.h>
 
 void print_usage(char *msg, enum usage type) {
     char *usage = "Usage: controller <address> <port> "
@@ -21,15 +23,15 @@ void print_usage(char *msg, enum usage type) {
     }
 }
 
-cmd *handle_args(int argc, char **argv) {
+cmd_t *handle_args(int argc, char **argv) {
     struct hostent *he; /* host entry */
     uint16_t port; /* host's port */
 
     /* create flags for 3 command sets */
-    flag *flag_arg = (flag *) malloc(sizeof(flag) * 3);
+    flag_t *flag_arg = (flag_t *) malloc(sizeof(flag_t) * 3);
 
     /* variable to track what command set is used */
-    cmd *cmd_arg = (cmd *) malloc(sizeof(cmd));
+    cmd_t *cmd_arg = (cmd_t *) malloc(sizeof(cmd_t));
     int flag_size = 0;
 
     /* if there is only 2 argument and it's --help */
@@ -59,10 +61,10 @@ cmd *handle_args(int argc, char **argv) {
     if (strcmp(argv[3], "mem") == 0) {
         /* set up mem flag's value */
         flag_arg->type = mem;
+        flag_size++;
 
         if (argv[4]) { /* get the optional argument */
             flag_arg->value = argv[4];
-            flag_size++;
         }
 
         /* return the command */
@@ -78,10 +80,10 @@ cmd *handle_args(int argc, char **argv) {
     } else if (strcmp(argv[3], "memkill") == 0) {
         /* setup memkill flag */
         flag_arg->type = memkill;
+        flag_size++;
 
         if (argv[4]) { /* get the required argument */
             flag_arg->value = argv[4];
-            flag_size++;
         } else {
             print_usage("Please specify percentage for memkill", error);
             exit(EXIT_FAILURE);
@@ -102,22 +104,21 @@ cmd *handle_args(int argc, char **argv) {
     /* When we get here we know that cmd set 2 and 3 is not set, we only consider cmd set 1 */
 
     opterr = 0; /* disable error message for getopt in case there is argument from the executable file */
-    int ch, /* character value when iterating through argv */
-    isFlag = 0; /* track if any flag in the first command group is set */
+    int ch; /* character value when iterating through argv */
+    bool isFlag = false; /* track if any flag in the first command group is set */
     int cmd1_args = 0; /* arguments counter for first command set to determine the position of the file */
     int oFlag = 0, lFlag = 0, tFlag = 0; /* position of flags in first command set */
 
     /* Executable file pointer */
-    file *exec_file = (file *) malloc(sizeof(file));
-    exec_file->size = 0;
+    cmd_arg->file_size = 0;
 
-    flag *first_arg = flag_arg; /* head of flag_arg array */
+    flag_t *first_arg = flag_arg; /* head of flag_arg array */
 
     /* A copy of argv (to reserve the order of the original argv) */
-    char *argv_cpy[argc];
+    char **argv_cpy = (char **) malloc(sizeof(char *) * argc);
     for (int i = 0; i < argc; i++) {
         argv_cpy[i] = malloc(strlen(argv[i]) + 1);
-        argv_cpy[i] = memcpy(argv_cpy[i], argv[i], strlen(argv[i]) + 1);
+        strcpy(argv_cpy[i], argv[i]);
     }
 
 
@@ -132,12 +133,12 @@ cmd *handle_args(int argc, char **argv) {
         switch (ch) {
             case 'o':
                 /* create flag for output */
-                flag_arg->type = out;
+                flag_arg->type = o;
                 flag_arg->value = optarg;
                 flag_arg++;
                 flag_size++;
 
-                isFlag = 1; /* set the command set 1 to true */
+                isFlag = true; /* set the command set 1 to true */
                 oFlag = optind - 1; /* set the position of output flag */
                 cmd1_args += 2; /* increment argument counter for first command set */
 
@@ -155,7 +156,7 @@ cmd *handle_args(int argc, char **argv) {
                 flag_arg++;
                 flag_size++;
 
-                isFlag = 1; /* set command set 1 to true */
+                isFlag = true; /* set command set 1 to true */
                 lFlag = optind - 1;  /* set the position of lflag */
                 cmd1_args += 2; /* increment argument counter for command set 1*/
 
@@ -172,12 +173,12 @@ cmd *handle_args(int argc, char **argv) {
                 break;
             case 't':
                 /* create flag for time */
-                flag_arg->type = time;
+                flag_arg->type = t;
                 flag_arg->value = optarg;
                 flag_arg++;
                 flag_size++;
 
-                isFlag = 1; /* set the first command set to true */
+                isFlag = true; /* set the first command set to true */
                 tFlag = optind - 1; /* store the position of the time flag */
                 cmd1_args += 2; /* increment the argument counter of first command set */
 
@@ -201,29 +202,27 @@ cmd *handle_args(int argc, char **argv) {
         }
     }
 
-    int file_index = cmd1_args + 3; /* index of file after retrieving all of the arguments */
+    /* index of file arguments after retrieving all of the arguments */
+    int file_index = cmd1_args + 3;
 
-    if (isFlag && oFlag != 4 && lFlag != 4 &&
-        tFlag != 4) { /* if cmd 1 is set, flags must be in right position */
+    /* if cmd 1 is set, flags must be in right position */
+    if (isFlag && oFlag != 4 && lFlag != 4 && tFlag != 4) {
         print_usage("Wrong command syntax", error);
         exit(EXIT_FAILURE);
     }
 
-    if (file_index == argc) { /* there must be file passing in the end of all option arguments */
+    /* there must be file passing in the end of all option arguments */
+    if (file_index == argc) {
         print_usage("Please specify file to run", error);
         exit(EXIT_FAILURE);
     }
-
-    /* set up the file arguments */
-    exec_file->size = argc - file_index;
-    exec_file->arg = argv + file_index;
-
 
     /* set up first command group and return */
     cmd_arg->type = cmd1;
     cmd_arg->flag_arg = first_arg;
     cmd_arg->flag_size = flag_size;
-    cmd_arg->file = exec_file;
+    cmd_arg->file_size = argc - file_index;
+    cmd_arg->file_arg = argv + file_index;
 }
 
 void send_str(int sockfd, char *msg) {
@@ -259,4 +258,16 @@ char *recv_str(int client_fd) {
     }
 
     return msg;
+}
+
+char *get_time(char *current_time) {
+    time_t timer;
+    struct tm *tm_info;
+
+    timer = time(NULL);
+    tm_info = localtime(&timer);
+
+    strftime(current_time, TIME_BUFFER, "%Y-%m-%d %H:%M:%S", tm_info);
+
+    return current_time;
 }
