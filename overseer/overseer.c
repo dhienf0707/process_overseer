@@ -21,7 +21,7 @@
 #define NUM_THREADS 5
 #define MAX_BUFFER 256
 
-bool recv_cmd(int, cmd_t *);
+cmd_t *recv_cmd(int);
 
 bool recv_flag(int, flag_t *);
 
@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
     uint16_t port;
     struct sockaddr_in server_addr, client_addr;
     socklen_t sin_size;
-    cmd_t *cmd_arg = (cmd_t *) malloc(sizeof(cmd_t)); /* command group's information */
+    cmd_t *cmd_arg; /* command group's information */
     pthread_t p_threads[NUM_THREADS];
 
     /* initialize the mutex and condition variable */
@@ -125,7 +125,7 @@ int main(int argc, char **argv) {
         printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
 
         /* receive command from client */
-        if (!recv_cmd(client_fd, cmd_arg));
+        if (!(cmd_arg = recv_cmd(client_fd)));
 
         /* add request to the linked list */
         add_request(cmd_arg, &request_mutex, &got_request);
@@ -218,7 +218,7 @@ void *handle_requests_loop(void *data) {
 
         /* free cmd_args elements */
         /* free file args if exist (mem and memkill doesn't have file specified) */
-        if (a_request->cmd_arg->file_size) {
+        if (a_request->cmd_arg->file_arg) {
             for (int i = 0; i < a_request->cmd_arg->file_size; i++) {
                 free(a_request->cmd_arg->file_arg[i]);
             }
@@ -227,9 +227,12 @@ void *handle_requests_loop(void *data) {
 
 
         /* free flag args and its value if exist
-         * Note that some flag doesn't have value (mem and memkill) */
-        if (a_request->cmd_arg->flag_arg->value) free(a_request->cmd_arg->flag_arg->value);
-        free(a_request->cmd_arg->flag_arg);
+         * Note that some command only has file without flag
+         * Note that some flag doesn't have value (mem) */
+        if (a_request->cmd_arg->flag_size) {
+            if (a_request->cmd_arg->flag_arg->value) free(a_request->cmd_arg->flag_arg->value);
+            free(a_request->cmd_arg->flag_arg);
+        }
 
         /* free cmd_arg */
         free(a_request->cmd_arg);
@@ -257,7 +260,7 @@ void exec_cmd1(cmd_t *cmd_arg) {
     int status;
     int outFile = 0, logFile = 0, term_time = 10;
 
-    /* inform to execute the file */
+    /* concat file arguments into string */
     char *file_args = (char *) malloc(sizeof(char) * MAX_BUFFER);
     strcpy(file_args, cmd_arg->file_arg[0]);
 
@@ -358,12 +361,15 @@ void exec_cmd1(cmd_t *cmd_arg) {
     }
 }
 
-bool recv_cmd(int client_fd, cmd_t *cmd_arg) {
+cmd_t *recv_cmd(int client_fd) {
+    /* allocate memory for the newly created command */
+    cmd_t *cmd_arg = (cmd_t *) malloc(sizeof(cmd_t));
+
     /* receive type of the command */
     uint32_t type;
     if (recv(client_fd, &type, sizeof(type), 0) != sizeof(type)) {
         fprintf(stderr, "recv got invalid size value\n");
-        return false;
+        return NULL;
     }
     cmd_arg->type = ntohl(type);
 
@@ -371,7 +377,7 @@ bool recv_cmd(int client_fd, cmd_t *cmd_arg) {
     uint32_t flag_size;
     if (recv(client_fd, &flag_size, sizeof(flag_size), 0) != sizeof(flag_size)) {
         fprintf(stderr, "recv got invalid size value\n");
-        return false;
+        return NULL;
     }
     cmd_arg->flag_size = ntohl(flag_size);
 
@@ -386,7 +392,7 @@ bool recv_cmd(int client_fd, cmd_t *cmd_arg) {
     uint32_t file_size;
     if (recv(client_fd, &file_size, sizeof(file_size), 0) != sizeof(file_size)) {
         fprintf(stderr, "recv got invalid size value\n");
-        return false;
+        return NULL;
     }
 
     /* receive file arguments */
@@ -395,13 +401,13 @@ bool recv_cmd(int client_fd, cmd_t *cmd_arg) {
     for (int i = 0; i < cmd_arg->file_size; i++) {
         if (!(cmd_arg->file_arg[i] = recv_str(client_fd))) {
             fprintf(stderr, "error receiving file arguments\n");
-            return false;
+            return NULL;
         }
     }
     /* add null pointer to the end of the array */
     cmd_arg->file_arg[cmd_arg->file_size] = NULL;
 
-    return true;
+    return cmd_arg;
 }
 
 bool recv_flag(int client_fd, flag_t *flag_arg) {
