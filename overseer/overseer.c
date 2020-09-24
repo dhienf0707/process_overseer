@@ -29,7 +29,6 @@ void process_cmd(cmd_t *);
 
 void exec_cmd1(cmd_t *);
 
-void timer_handler(int sig);
 
 void child_handler(int sig);
 
@@ -58,8 +57,6 @@ char current_time[TIME_BUFFER];
 request_t *requests = NULL; /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0; /* number of pending requests, initially none */
-void timer_handler(int sig) {
-}
 
 void child_handler(int sig) {
 
@@ -74,6 +71,8 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    /* add signal handler */
+    signal(SIGCHLD, child_handler);
 
     threads :
     {
@@ -303,7 +302,7 @@ void exec_cmd1(cmd_t *cmd_arg) {
                 break;
             case log:
                 if ((logFile = open(cmd_arg->flag_arg[i].value,
-                                    O_CREAT | O_TRUNC | O_WRONLY,
+                                    O_CREAT | O_APPEND | O_WRONLY,
                                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
                     perror("open");
                 }
@@ -317,7 +316,7 @@ void exec_cmd1(cmd_t *cmd_arg) {
 
     /* create pipe to signal the parent of successful executed program */
     pid_t pid;
-    int buf, n, status, result, rc;
+    int buf, n, status, result;
     int pipe_fds[2];
     pipe2(pipe_fds, O_CLOEXEC);
     bool isTerm = false,
@@ -332,80 +331,90 @@ void exec_cmd1(cmd_t *cmd_arg) {
 
     /* fork and execute file */
     pid = fork();
-    if (pid == 0) {
-        /* duplicate outfile descriptor onto stdout and stdin if exist */
-        if (outFile) {
-            dup2(outFile, STDOUT_FILENO);
-            dup2(outFile, STDERR_FILENO);
-        }
+    switch (pid) {
+        case -1:
+            perror("fork");
+            break;
+        case 0:
+            /* duplicate outfile descriptor onto stdout and stdin if exist */
+            if (outFile) {
+                dup2(outFile, STDOUT_FILENO);
+                dup2(outFile, STDERR_FILENO);
+            }
 
-        /* close the reading side of the pipe*/
-        close(pipe_fds[0]);
+            /* close the reading side of the pipe*/
+            close(pipe_fds[0]);
 
-        /* execute the file */
-        execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
+            /* execute the file */
+            execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
 
-        /* write to the pipe the error code */
-        write(pipe_fds[1], &errno, sizeof(errno));
+            /* write to the pipe the error code */
+            write(pipe_fds[1], &errno, sizeof(errno));
 
-        /* send error code if exec failed */
-        exit(errno);
-    } else if (pid > 0) {
-        /* add signal handler to parent */
-        signal(SIGALRM, timer_handler);
-        signal(SIGCHLD, child_handler);
+            /* send error code if exec failed */
+            exit(errno);
 
-        /* get the pipe's data to know if there's any error occurred with execv */
-        close(pipe_fds[1]);
-        n = read(pipe_fds[0], &buf, sizeof(buf));
-        if (n == 0) { /* nothing in pipe */
-            sleep(1);
-            printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
-        } else {
-            printf("%s - could not execute %s - Terminated with error: %s\n",
-                   get_time(current_time), file_args, strerror(buf));
-        }
-        close(pipe_fds[0]);
+            break;
+        default:
+            /* get the pipe's data to know if there's any error occurred with execv */
+            close(pipe_fds[1]);
+            n = read(pipe_fds[0], &buf, sizeof(buf));
+            if (n == 0) { /* nothing in pipe */
+                sleep(1);
+                printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
+            }
+            close(pipe_fds[0]);
 
 
-        /* pause the parent until either child terminated or timeout */
-        rc = select(0, NULL, NULL, NULL, &exec_timeout);
-
-        result = waitpid(pid, &status, WNOHANG);
-        if (result == 0) { /* child is still running */
-            isTerm = true;
-            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
-            kill(pid, SIGTERM);
-
-            /* unpause on either child termination or sigkill timeout */
-            rc = select(0, NULL, NULL, NULL, &term_timeout);
+            /* pause the parent until either child terminated or timeout */
+            select(0, NULL, NULL, NULL, &exec_timeout);
 
             result = waitpid(pid, &status, WNOHANG);
-            if (result == 0) { /* child is still running  */
-                isKill = true;
-                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
-                kill(pid, SIGKILL);
+            if (result == 0) { /* child is still running */
+                isTerm = true;
+                printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
+                kill(pid, SIGTERM);
+
+                /* unpause on either child termination or sigkill timeout */
+                select(0, NULL, NULL, NULL, &term_timeout);
+
+                result = waitpid(pid, &status, WNOHANG);
+                if (result == 0) { /* child is still running  */
+                    isKill = true;
+                    isTerm = false;
+                    printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
+                    kill(pid, SIGKILL);
+                } else if (result < 0) {
+                    perror("waitpid");
+                }
             } else if (result < 0) {
                 perror("waitpid");
             }
-        } else if (result < 0) {
-            perror("waitpid");
-        }
 
-        /* By here child should have been finished. Check the status and print out result based on status */
-        if (!WIFEXITED(status) && !WEXITSTATUS(status)) {
-            printf("%s - %d has terminated with status code %d\n",
-                   get_time(current_time), pid, WEXITSTATUS(status));
-        }
+            /* By here child should have been finished. Check the status and print out result based on status */
+            if (WIFEXITED(status)) {
+                if (!isKill) {
+                    if (WEXITSTATUS(status)) {
+                        printf("%s - could not execute %s - Error: %s\n",
+                               get_time(current_time), file_args, strerror(buf));
+                    } else {
+                        printf("%s - %d has terminated with status code %d\n",
+                               get_time(current_time), pid, WEXITSTATUS(status));
+                    }
+                }
+            } else if (isTerm) {
+                printf("%s - %d has terminated with status code %d\n",
+                       get_time(current_time), pid, WEXITSTATUS(status));
+            }
 
-        /* restore the log management to normal stdout */
-        dup2(saved_stdout, STDOUT_FILENO);
-        close(saved_stdout);
+            /* restore the log management to normal stdout */
+            dup2(saved_stdout, STDOUT_FILENO);
+            close(saved_stdout);
 
-        /* free the file_args string*/
-        free(file_args);
-    } else {
-        perror("fork");
+            /* free the file_args string*/
+            free(file_args);
+
+            break;
     }
 }
 
