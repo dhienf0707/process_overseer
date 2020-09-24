@@ -29,6 +29,12 @@ void process_cmd(cmd_t *);
 
 void exec_cmd1(cmd_t *);
 
+void timer_handler(int sig);
+
+void child_handler(int sig);
+
+void interrupt_handler(int sig);
+
 /* global mutex for our program. */
 pthread_mutex_t request_mutex;
 
@@ -52,25 +58,15 @@ char current_time[TIME_BUFFER];
 request_t *requests = NULL; /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0; /* number of pending requests, initially none */
+void timer_handler(int sig) {
+}
+
+void child_handler(int sig) {
+
+}
 
 int main(int argc, char **argv) {
-    int server_fd, client_fd;
-    uint16_t port;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t sin_size;
     cmd_t *cmd_arg; /* command group's information */
-    pthread_t p_threads[NUM_THREADS];
-
-    /* initialize the mutex and condition variable */
-    pthread_mutex_init(&request_mutex, NULL);
-    pthread_cond_init(&got_request, NULL);
-
-
-    /* create the request-handling threads */
-    for (int i = 0; i < NUM_THREADS; i++) {
-
-        pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
-    }
 
     /* check for arguments */
     if (argc != 2) {
@@ -78,61 +74,84 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    /* get port number to listen on */
-    port = atoi(argv[1]);
 
-    /* set up socket */
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
+    threads :
+    {
+        pthread_t p_threads[NUM_THREADS]; /* threads */
 
-    /* enable address and port reuse */
-    int opt_enable = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-               &opt_enable, sizeof(opt_enable));
+        /* initialize the mutex and condition variable */
+        pthread_mutex_init(&request_mutex, NULL);
+        pthread_cond_init(&got_request, NULL);
 
-    /* setup endpoint */
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-    server_addr.sin_family = AF_INET;
-    memset(&server_addr.sin_zero, 0, sizeof(server_addr.sin_zero));
 
-    /* bind the socket to the end point */
-    if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr)) == -1) {
-        perror("bind");
-        exit(EXIT_FAILURE);
-    }
+        /* create the request-handling threads */
+        for (int i = 0; i < NUM_THREADS; i++) {
+            pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
+        }
+    };
 
-    /* start listening */
-    if (listen(server_fd, BACKLOG)) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
+    network:
+    {
+        int server_fd, client_fd;
+        uint16_t port;
+        struct sockaddr_in server_addr, client_addr;
+        socklen_t sin_size;
 
-    printf("Server starts listening on port %u...\n", port);
+        /* get port number to listen on */
+        port = atoi(argv[1]);
 
-    /* repeat: accept, execute, close connection */
-    while (1) {
-        sin_size = sizeof(struct sockaddr_in);
-
-        /* accept connection */
-        if ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {
-            perror("accept");
-            continue;
+        /* set up socket */
+        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+            perror("socket");
+            exit(EXIT_FAILURE);
         }
 
-        printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
+        /* enable address and port reuse */
+        int opt_enable = 1;
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   &opt_enable, sizeof(opt_enable));
 
-        /* receive command from client */
-        if (!(cmd_arg = recv_cmd(client_fd)));
+        /* setup endpoint */
+        server_addr.sin_addr.s_addr = INADDR_ANY;
+        server_addr.sin_port = htons(port);
+        server_addr.sin_family = AF_INET;
+        memset(&server_addr.sin_zero, 0, sizeof(server_addr.sin_zero));
 
-        /* add request to the linked list */
-        add_request(cmd_arg, &request_mutex, &got_request);
+        /* bind the socket to the end point */
+        if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr)) == -1) {
+            perror("bind");
+            exit(EXIT_FAILURE);
+        }
 
-        /* close connection */
-        close(client_fd);
-    }
+        /* start listening */
+        if (listen(server_fd, BACKLOG)) {
+            perror("listen");
+            exit(EXIT_FAILURE);
+        }
+        printf("Server starts listening on port %u...\n", port);
+
+        /* repeat: accept, execute, close connection */
+        while (1) {
+            sin_size = sizeof(struct sockaddr_in);
+
+            /* accept connection */
+            if ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {
+                perror("accept");
+                continue;
+            }
+
+            printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
+
+            /* receive command from client */
+            if (!(cmd_arg = recv_cmd(client_fd)));
+
+            /* add request to the linked list */
+            add_request(cmd_arg, &request_mutex, &got_request);
+
+            /* close connection */
+            close(client_fd);
+        }
+    };
 }
 
 void add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
@@ -196,6 +215,7 @@ void handle_request(request_t *a_request) {
 
 void *handle_requests_loop(void *data) {
     //TODO
+    pthread_mutex_t *quit_mutex = data;
     request_t *a_request; /* pointer to a request */
 
     /* do forever... */
@@ -229,10 +249,10 @@ void *handle_requests_loop(void *data) {
         /* free flag args and its value if exist
          * Note that some command only has file without flag
          * Note that some flag doesn't have value (mem) */
-        if (a_request->cmd_arg->flag_size) {
-            if (a_request->cmd_arg->flag_arg->value) free(a_request->cmd_arg->flag_arg->value);
-            free(a_request->cmd_arg->flag_arg);
+        if (a_request->cmd_arg->flag_size && a_request->cmd_arg->flag_arg->value) {
+            free(a_request->cmd_arg->flag_arg->value);
         }
+        free(a_request->cmd_arg->flag_arg);
 
         /* free cmd_arg */
         free(a_request->cmd_arg);
@@ -256,9 +276,11 @@ void process_cmd(cmd_t *cmd_arg) {
 }
 
 void exec_cmd1(cmd_t *cmd_arg) {
-    pid_t pid;
-    int status;
-    int outFile = 0, logFile = 0, term_time = 10;
+    /* flag argument value */
+    int outFile = 0, logFile = 0;
+    struct timeval exec_timeout = {10, 0},
+            term_timeout = {5, 0};
+
 
     /* concat file arguments into string */
     char *file_args = (char *) malloc(sizeof(char) * MAX_BUFFER);
@@ -287,16 +309,19 @@ void exec_cmd1(cmd_t *cmd_arg) {
                 }
                 break;
             case t:
-                term_time = atoi(cmd_arg->flag_arg[i].value);
+                exec_timeout.tv_sec = atoi(cmd_arg->flag_arg[i].value);
                 break;
         }
     }
 
 
     /* create pipe to signal the parent of successful executed program */
-    int buf, n;
+    pid_t pid;
+    int buf, n, status, result, rc;
     int pipe_fds[2];
     pipe2(pipe_fds, O_CLOEXEC);
+    bool isTerm = false,
+            isKill = false;
 
     /* log management to logfile if exist*/
     int saved_stdout = dup(STDOUT_FILENO);
@@ -306,60 +331,84 @@ void exec_cmd1(cmd_t *cmd_arg) {
     printf("%s - attempting to execute %s\n", get_time(current_time), file_args);
 
     /* fork and execute file */
-    switch (pid = fork()) {
-        case -1:
-            perror("fork");
-            break;
-        case 0:
-            /* duplicate outfile descriptor onto stdout and stdin if exist */
-            if (outFile) {
-                dup2(outFile, STDOUT_FILENO);
-                dup2(outFile, STDERR_FILENO);
-            }
+    pid = fork();
+    if (pid == 0) {
+        /* duplicate outfile descriptor onto stdout and stdin if exist */
+        if (outFile) {
+            dup2(outFile, STDOUT_FILENO);
+            dup2(outFile, STDERR_FILENO);
+        }
 
-            /* close the reading side of the pipe*/
-            close(pipe_fds[0]);
+        /* close the reading side of the pipe*/
+        close(pipe_fds[0]);
 
-            /* execute the file */
-            execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
+        /* execute the file */
+        execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
 
-            /* write to the pipe the error code */
-            write(pipe_fds[1], &errno, sizeof(errno));
+        /* write to the pipe the error code */
+        write(pipe_fds[1], &errno, sizeof(errno));
 
-            /* send error code if exec failed */
-            exit(errno);
-            break;
-        default:
-            close(pipe_fds[1]);
-            n = read(pipe_fds[0], &buf, sizeof(buf));
-            if (n == 0) { /* nothing in pipe */
-                sleep(1);
-                printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
-            }
-            close(pipe_fds[0]);
+        /* send error code if exec failed */
+        exit(errno);
+    } else if (pid > 0) {
+        /* add signal handler to parent */
+        signal(SIGALRM, timer_handler);
+        signal(SIGCHLD, child_handler);
 
-            if (waitpid(pid, &status, 0) > 0) {
-                if (WIFEXITED(status) && !WEXITSTATUS(status)) { /* terminated normally */
-                    printf("%s - %d has terminated with status code %d\n",
-                           get_time(current_time), pid, WEXITSTATUS(status));
-                } else {
-                    printf("%s - could not execute %s - Terminated with error: %s\n",
-                           get_time(current_time), file_args, strerror(WEXITSTATUS(status)));
-                }
-            } else {
+        /* get the pipe's data to know if there's any error occurred with execv */
+        close(pipe_fds[1]);
+        n = read(pipe_fds[0], &buf, sizeof(buf));
+        if (n == 0) { /* nothing in pipe */
+            sleep(1);
+            printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
+        } else {
+            printf("%s - could not execute %s - Terminated with error: %s\n",
+                   get_time(current_time), file_args, strerror(buf));
+        }
+        close(pipe_fds[0]);
+
+
+        /* pause the parent until either child terminated or timeout */
+        rc = select(0, NULL, NULL, NULL, &exec_timeout);
+
+        result = waitpid(pid, &status, WNOHANG);
+        if (result == 0) { /* child is still running */
+            isTerm = true;
+            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
+            kill(pid, SIGTERM);
+
+            /* unpause on either child termination or sigkill timeout */
+            rc = select(0, NULL, NULL, NULL, &term_timeout);
+
+            result = waitpid(pid, &status, WNOHANG);
+            if (result == 0) { /* child is still running  */
+                isKill = true;
+                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
+                kill(pid, SIGKILL);
+            } else if (result < 0) {
                 perror("waitpid");
             }
+        } else if (result < 0) {
+            perror("waitpid");
+        }
 
-            /* restore the log management to normal stdout */
-            dup2(saved_stdout, STDOUT_FILENO);
-            close(saved_stdout);
+        /* By here child should have been finished. Check the status and print out result based on status */
+        if (!WIFEXITED(status) && !WEXITSTATUS(status)) {
+            printf("%s - %d has terminated with status code %d\n",
+                   get_time(current_time), pid, WEXITSTATUS(status));
+        }
 
-            /* free the file_args string*/
-            free(file_args);
+        /* restore the log management to normal stdout */
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
 
-            break;
+        /* free the file_args string*/
+        free(file_args);
+    } else {
+        perror("fork");
     }
 }
+
 
 cmd_t *recv_cmd(int client_fd) {
     /* allocate memory for the newly created command */
@@ -384,7 +433,10 @@ cmd_t *recv_cmd(int client_fd) {
     /* receive all flags */
     cmd_arg->flag_arg = (flag_t *) malloc(sizeof(flag_t) * 3);
     for (int i = 0; i < cmd_arg->flag_size; i++) {
-        if (!recv_flag(client_fd, cmd_arg->flag_arg + i)) return false;
+        if (!recv_flag(client_fd, cmd_arg->flag_arg + i)) {
+            fprintf(stderr, "error receiving flag argument\n");
+            return NULL;
+        };
     }
 
     /* receive file arguments */
@@ -436,4 +488,8 @@ bool recv_flag(int client_fd, flag_t *flag_arg) {
     }
 
     return true;
+}
+
+void interrupt_handler(int sig) {
+
 }
