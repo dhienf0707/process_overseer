@@ -36,7 +36,8 @@ int main(int argc, char **argv) {
 
     /* connect to server */
     if (connect(sockfd, (struct sockaddr *) &serverAddr, sizeof(struct sockaddr)) == -1) {
-        fprintf(stderr, "Could not connect to overseer at %s %d\n", inet_ntoa(cmd_arg->host_addr), cmd_arg->port);
+        fprintf(stderr, "Could not connect to overseer at %s %d\n",
+                inet_ntoa(cmd_arg->host_addr), cmd_arg->port);
         exit(EXIT_FAILURE);
     }
 

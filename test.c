@@ -8,71 +8,38 @@
 #include <signal.h>
 #include <wait.h>
 #include <errno.h>
+#include <pthread.h>
 
 //
 // Created by duchi on 9/19/2020.
 //
 
-void timer_handler(int);
-void child_handler(int);
 
 char current_time[TIME_BUFFER];
 
-void timer_handler(int sig) {
-
-}
-
-void child_handler(int sig) {
-
+void *exec_hello(void *data) {
+    char *time = (char *) data;
+    char *args[] = {"./controller/controller", "localhost", "3000", "hello", time, NULL};
+    execv(args[0], args);
 }
 
 int main(int argc, char **argv) {
-    pid_t pid = fork();
-    int status;
-    int term_time = 4;
-    int term_timeout = 5;
-    int result;
+    pid_t pid;
+    char *args[] = {"./controller/controller", "localhost", "3000", "hello", "0", NULL};
 
-    if (pid == 0) { /* child */
-        signal(SIGTERM, SIG_IGN);
-        char *args[] = {"./overseer/hello", "10", NULL};
-        execv(args[0], args);
-        exit(errno);
-    } else {
-        signal(SIGALRM, timer_handler);
-        signal(SIGCHLD, child_handler);
+    pid = fork();
+    if (pid == 0) goto fork2;
+    args[4] = "1";
 
-        /* unpause on either child termination or sigterm timeout*/
-        alarm(term_time);
-        pause();
+    fork2: { pid = fork(); };
+    if (pid == 0) goto fork3;
+    args[4] = "2";
 
-        result = waitpid(pid, &status, WNOHANG);
-        if (result == 0) { /* child is still running */
-            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
-            kill(pid, SIGTERM);
+    fork3: { pid = fork(); };
 
-            /* unpause on either child termination or sigkill timeout */
-            alarm(term_timeout);
-            pause();
 
-            result = waitpid(pid, &status, WNOHANG);
-            if (result == 0) { /* child is still running  */
-                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
-                kill(pid, SIGKILL);
-            } else if (result == -1) {
-                perror("waitpid");
-            }
-        } else if (result == -1) {
-            perror("waitpid");
-        }
+    printf("Send '%s %s' to overseer", args[3], args[4]);
+    execv(args[0], args);
 
-        printf("exit code: %d\n", WIFEXITED(status));
-
-        printf("status code: %d\n", WEXITSTATUS(status));
-
-        /* By here child should have been finished. Check the status and print out result based on status */
-        if (WIFEXITED(status)) { /* if exited normally */
-            printf("%s - %d has terminated with status code %d\n", get_time(current_time), pid, WEXITSTATUS(status));
-        }
-    }
+    exit(EXIT_SUCCESS);
 }

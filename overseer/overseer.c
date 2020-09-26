@@ -16,6 +16,7 @@
 #include <wait.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #define BACKLOG 10
 #define NUM_THREADS 5
@@ -29,16 +30,22 @@ void process_cmd(cmd_t *);
 
 void exec_cmd1(cmd_t *);
 
-
 void child_handler(int sig);
 
 void interrupt_handler(int sig);
 
+void term_handler(int sig);
+
+void usrsig_handler(int sig);
+
 /* global mutex for our program. */
 pthread_mutex_t request_mutex;
 
-/* global condition variable for our program. */
+/* global condition variabe for our program. */
 pthread_cond_t got_request;
+
+/* atomic bool variable */
+atomic_bool quit = false;
 
 /* create request struct */
 typedef struct request {
@@ -46,11 +53,21 @@ typedef struct request {
     struct request *next;
 } request_t;
 
+/* handle 1 request */
 void handle_request(request_t *);
 
+/* handle requests loop for threads */
 void *handle_requests_loop(void *);
 
+/* add request to list */
 void add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
+
+/* get 1 request from list */
+request_t *get_request();
+
+/* free addresses for 1 request */
+void free_request(request_t *);
+
 
 char current_time[TIME_BUFFER];
 
@@ -60,6 +77,17 @@ int num_request = 0; /* number of pending requests, initially none */
 
 void child_handler(int sig) {
 
+}
+
+void interrupt_handler(int sig) {
+    quit = true;
+    pthread_cond_broadcast(&got_request);
+
+    /* free memory left if exist */
+    request_t *a_request;
+    while ((a_request = get_request())) {
+        free_request(a_request);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -72,85 +100,103 @@ int main(int argc, char **argv) {
     }
 
     /* add signal handler */
+    /* occur when child finshed executing */
     signal(SIGCHLD, child_handler);
 
-    threads :
-    {
-        pthread_t p_threads[NUM_THREADS]; /* threads */
+    /* occur when interrupt signal is sent (Ctrl + C)
+     * Note: sigaction is preferred here since it would not trigger SA_RESTART
+     * which will restart the accept function and won't let the program quit */
+    struct sigaction int_action;
+    int_action.sa_handler = interrupt_handler;
+    int_action.sa_flags = 0;
+    sigemptyset(&int_action.sa_mask);
+    sigaction(SIGINT, &int_action, NULL);
 
-        /* initialize the mutex and condition variable */
-        pthread_mutex_init(&request_mutex, NULL);
-        pthread_cond_init(&got_request, NULL);
+    /* start threads */
+    pthread_t p_threads[NUM_THREADS]; /* threads */
 
+    /* initialize the mutex and condition variable */
+    pthread_mutex_init(&request_mutex, NULL);
+    pthread_cond_init(&got_request, NULL);
 
-        /* create the request-handling threads */
-        for (int i = 0; i < NUM_THREADS; i++) {
-            pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
-        }
-    };
+    /* create the request-handling threads */
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
+    }
 
-    network:
-    {
-        int server_fd, client_fd;
-        uint16_t port;
-        struct sockaddr_in server_addr, client_addr;
-        socklen_t sin_size;
+    /* setup networking */
+    int server_fd, client_fd;
+    uint16_t port;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t sin_size;
 
-        /* get port number to listen on */
-        port = atoi(argv[1]);
+    /* get port number to listen on */
+    port = atoi(argv[1]);
 
-        /* set up socket */
-        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-            perror("socket");
-            exit(EXIT_FAILURE);
-        }
+    /* set up socket */
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
 
-        /* enable address and port reuse */
-        int opt_enable = 1;
-        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-                   &opt_enable, sizeof(opt_enable));
+    /* enable address and port reuse */
+    int opt_enable = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+               &opt_enable, sizeof(opt_enable));
 
-        /* setup endpoint */
-        server_addr.sin_addr.s_addr = INADDR_ANY;
-        server_addr.sin_port = htons(port);
-        server_addr.sin_family = AF_INET;
-        memset(&server_addr.sin_zero, 0, sizeof(server_addr.sin_zero));
+    /* setup endpoint */
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(port);
+    server_addr.sin_family = AF_INET;
+    memset(&server_addr.sin_zero, 0, sizeof(server_addr.sin_zero));
 
-        /* bind the socket to the end point */
-        if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr)) == -1) {
-            perror("bind");
-            exit(EXIT_FAILURE);
-        }
+    /* bind the socket to the end point */
+    if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr)) == -1) {
+        perror("bind");
+        exit(EXIT_FAILURE);
+    }
 
-        /* start listening */
-        if (listen(server_fd, BACKLOG)) {
-            perror("listen");
-            exit(EXIT_FAILURE);
-        }
-        printf("Server starts listening on port %u...\n", port);
+    /* start listening */
+    if (listen(server_fd, BACKLOG)) {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+    printf("Server starts listening on port %u...\n", port);
 
-        /* repeat: accept, execute, close connection */
-        while (1) {
-            sin_size = sizeof(struct sockaddr_in);
+    /* repeat: accept, execute, close connection */
+    while (!quit) {
+        sin_size = sizeof(struct sockaddr_in);
 
-            /* accept connection */
-            if ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {
+        /* accept connection */
+        if ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {
+            if (errno = EINTR) {
+                continue;
+            } else {
                 perror("accept");
                 continue;
             }
-
-            printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
-
-            /* receive command from client */
-            if (!(cmd_arg = recv_cmd(client_fd)));
-
-            /* add request to the linked list */
-            add_request(cmd_arg, &request_mutex, &got_request);
-
-            /* close connection */
-            close(client_fd);
         }
-    };
+
+        printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
+
+        /* receive command from client */
+        if (!(cmd_arg = recv_cmd(client_fd)));
+
+        /* add request to the linked list */
+        add_request(cmd_arg, &request_mutex, &got_request);
+
+        /* close connection */
+        close(client_fd);
+    }
+    close(server_fd);
+
+    /* join threads */
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(p_threads[i], NULL);
+    }
+
+    /* exit gracefully */
+    exit(EXIT_SUCCESS);
 }
 
 void add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
@@ -192,17 +238,21 @@ void add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_con
 request_t *get_request() {
     request_t *a_request; /* pointer to a request */
 
-    /* get request from the head of the list */
-    a_request = requests;
-    requests = a_request->next;
+    if (num_request > 0) {
+        /* get request from the head of the list */
+        a_request = requests;
+        requests = a_request->next;
 
-    /* if request is the last request on the list */
-    if (requests == NULL) {
-        last_request = NULL;
+        /* if request is the last request on the list */
+        if (requests == NULL) {
+            last_request = NULL;
+        }
+
+        /* decrement the number of pending requests */
+        num_request--;
+    } else {
+        a_request = NULL;
     }
-
-    /* decrement the number of pending requests */
-    num_request--;
 
     /* return the request to the caller */
     return a_request;
@@ -214,50 +264,35 @@ void handle_request(request_t *a_request) {
 
 void *handle_requests_loop(void *data) {
     //TODO
-    pthread_mutex_t *quit_mutex = data;
     request_t *a_request; /* pointer to a request */
 
-    /* do forever... */
-    while (1) {
-        pthread_mutex_lock(&request_mutex); /* get exclusive access to the list */
 
-        /* this combine with while (1) will create waiting loop if num_request is 0 */
-        if (num_request == 0) {
+    /* do forever... */
+    while (!quit) {
+        /* lock the mutex, to access the requests list exclusively. */
+        pthread_mutex_lock(&request_mutex);
+
+        /* wait for a request to arrive. Note the mutex will be
+         * unlocked here for other threads to access the requests list.
+         * After getting request and acquire mutex, it will automatically
+         * locked the mutex (require unlock explicitly) */
+        if (num_request <= 0) {
             pthread_cond_wait(&got_request, &request_mutex);
         }
 
         /* get request */
         a_request = get_request();
 
-        /* unlock for other threads to get request */
+        /* unlock lock other threads to get request */
         pthread_mutex_unlock(&request_mutex);
 
-        /* handle request and free request pointer */
-        handle_request(a_request);
+        if (a_request) {
+            /* handle request */
+            handle_request(a_request);
 
-        /* free cmd_args elements */
-        /* free file args if exist (mem and memkill doesn't have file specified) */
-        if (a_request->cmd_arg->file_arg) {
-            for (int i = 0; i < a_request->cmd_arg->file_size; i++) {
-                free(a_request->cmd_arg->file_arg[i]);
-            }
-            free(a_request->cmd_arg->file_arg);
+            /* free request and its resources */
+            free_request(a_request);
         }
-
-
-        /* free flag args and its value if exist
-         * Note that some command only has file without flag
-         * Note that some flag doesn't have value (mem) */
-        if (a_request->cmd_arg->flag_size && a_request->cmd_arg->flag_arg->value) {
-            free(a_request->cmd_arg->flag_arg->value);
-        }
-        free(a_request->cmd_arg->flag_arg);
-
-        /* free cmd_arg */
-        free(a_request->cmd_arg);
-
-        /* free a_request */
-        free(a_request);
     }
 
 }
@@ -319,102 +354,96 @@ void exec_cmd1(cmd_t *cmd_arg) {
     int buf, n, status, result;
     int pipe_fds[2];
     pipe2(pipe_fds, O_CLOEXEC);
-    bool isTerm = false,
-            isKill = false;
-
-    /* log management to logfile if exist*/
-    int saved_stdout = dup(STDOUT_FILENO);
-    if (logFile) dup2(logFile, STDOUT_FILENO);
-
-    /* inform of file execution */
-    printf("%s - attempting to execute %s\n", get_time(current_time), file_args);
+    bool executed = false;
 
     /* fork and execute file */
     pid = fork();
-    switch (pid) {
-        case -1:
-            perror("fork");
-            break;
-        case 0:
-            /* duplicate outfile descriptor onto stdout and stdin if exist */
-            if (outFile) {
-                dup2(outFile, STDOUT_FILENO);
-                dup2(outFile, STDERR_FILENO);
-            }
+    if (pid == -1) {
+        perror("fork");
+    } else if (pid == 0) {
+        /* duplicate outfile descriptor onto stdout and stdin if exist */
+        if (outFile) {
+            dup2(outFile, STDOUT_FILENO);
+            dup2(outFile, STDERR_FILENO);
+        }
 
-            /* close the reading side of the pipe*/
-            close(pipe_fds[0]);
+        /* close the reading side of the pipe*/
+        close(pipe_fds[0]);
 
-            /* execute the file */
-            execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
+        /* execute the file */
+        execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
 
-            /* write to the pipe the error code */
-            write(pipe_fds[1], &errno, sizeof(errno));
+        /* write to the pipe the error code */
+        write(pipe_fds[1], &errno, sizeof(errno));
 
-            /* send error code if exec failed */
-            exit(errno);
+        /* send error code if exec failed */
+        _exit(errno);
+    } else {
+        /* log management to logfile if exist*/
+        int saved_stdout = dup(STDOUT_FILENO);
+        if (logFile) dup2(logFile, STDOUT_FILENO);
 
-            break;
-        default:
-            /* get the pipe's data to know if there's any error occurred with execv */
-            close(pipe_fds[1]);
-            n = read(pipe_fds[0], &buf, sizeof(buf));
-            if (n == 0) { /* nothing in pipe */
-                sleep(1);
-                printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
-            }
-            close(pipe_fds[0]);
+        /* inform of file execution */
+        printf("%s - attempting to execute %s\n", get_time(current_time), file_args);
 
+        /* get the pipe's data to know if there's any error occurred with execv */
+        close(pipe_fds[1]);
+        n = read(pipe_fds[0], &buf, sizeof(buf));
+        if (n == 0) { /* nothing in pipe -> successfully executed */
+            executed = true;
+            sleep(1);
+            printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
 
             /* pause the parent until either child terminated or timeout */
             select(0, NULL, NULL, NULL, &exec_timeout);
+        } else {
+            printf("%s - could not execute %s - Error: %s\n",
+                   get_time(current_time), file_args, strerror(buf));
+        }
+        close(pipe_fds[0]);
+
+        /* In here, the code will be continue by either timout or child signal.
+         * We need to use waitpid to get the status of the child to see if it exited or not*/
+        result = waitpid(pid, &status, WNOHANG);
+        if (result == 0) { /* timeout, child is still running */
+            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
+            kill(pid, SIGTERM);
+
+            /* pause the parent until either child terminated or timeout */
+            select(0, NULL, NULL, NULL, &term_timeout);
 
             result = waitpid(pid, &status, WNOHANG);
-            if (result == 0) { /* child is still running */
-                isTerm = true;
-                printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
-                kill(pid, SIGTERM);
+            if (result == 0) { /* timeout, child is still running  */
+                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
+                kill(pid, SIGKILL);
 
-                /* unpause on either child termination or sigkill timeout */
-                select(0, NULL, NULL, NULL, &term_timeout);
-
-                result = waitpid(pid, &status, WNOHANG);
-                if (result == 0) { /* child is still running  */
-                    isKill = true;
-                    isTerm = false;
-                    printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
-                    kill(pid, SIGKILL);
-                } else if (result < 0) {
+                /* final check */
+                result = waitpid(pid, &status, 0);
+                if (result < 0) {
                     perror("waitpid");
                 }
-            } else if (result < 0) {
+            } else if (result > 0) { /* child has finished*/
+                printf("%s - %d has terminated with status code %d\n",
+                       get_time(current_time), pid, WEXITSTATUS(status));
+            } else {
                 perror("waitpid");
             }
-
-            /* By here child should have been finished. Check the status and print out result based on status */
-            if (WIFEXITED(status)) {
-                if (!isKill) {
-                    if (WEXITSTATUS(status)) {
-                        printf("%s - could not execute %s - Error: %s\n",
-                               get_time(current_time), file_args, strerror(buf));
-                    } else {
-                        printf("%s - %d has terminated with status code %d\n",
-                               get_time(current_time), pid, WEXITSTATUS(status));
-                    }
-                }
-            } else if (isTerm) {
+        } else if (result > 0) { /* child has finished */
+            if (executed) {
                 printf("%s - %d has terminated with status code %d\n",
                        get_time(current_time), pid, WEXITSTATUS(status));
             }
+        } else {
+            perror("waitpid");
+        }
 
-            /* restore the log management to normal stdout */
-            dup2(saved_stdout, STDOUT_FILENO);
-            close(saved_stdout);
+        /* restore the log management to normal stdout */
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
 
-            /* free the file_args string*/
-            free(file_args);
+        /* free the file_args string*/
+        free(file_args);
 
-            break;
     }
 }
 
@@ -499,6 +528,28 @@ bool recv_flag(int client_fd, flag_t *flag_arg) {
     return true;
 }
 
-void interrupt_handler(int sig) {
+void free_request(request_t *a_request) {
+    /* free cmd_args elements */
+    /* free file args if exist (mem and memkill doesn't have file specified) */
+    if (a_request->cmd_arg->file_arg) {
+        for (int i = 0; i < a_request->cmd_arg->file_size; i++) {
+            free(a_request->cmd_arg->file_arg[i]);
+        }
+        free(a_request->cmd_arg->file_arg);
+    }
 
+
+    /* free flag args and its value if exist
+     * Note that some command only has file without flag
+     * Note that some flag doesn't have value (mem) */
+    if (a_request->cmd_arg->flag_size && a_request->cmd_arg->flag_arg->value) {
+        free(a_request->cmd_arg->flag_arg->value);
+    }
+    free(a_request->cmd_arg->flag_arg);
+
+    /* free cmd_arg */
+    free(a_request->cmd_arg);
+
+    /* free a_request */
+    free(a_request);
 }

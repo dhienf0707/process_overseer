@@ -1,6 +1,3 @@
-# Find pthread library
-find_package(Threads)
-
 # add executable target
 add_executable(overseer overseer.c)
 
