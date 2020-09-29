@@ -14,9 +14,11 @@
 #include <helpers.h>
 #include <wait.h>
 
+pid_t pid;
+
 void handler(int sig) {
     if (sig == SIGUSR1) {
-        raise(SIGKILL);
+        kill(pid, SIGKILL);
     }
 }
 
@@ -55,7 +57,6 @@ int main(int argc, char **argv) {
     }
 
     /* fork info */
-    pid_t pid;
     int status, result;
 
     /* pipe info to signal the parent of successful executed child */
@@ -68,6 +69,9 @@ int main(int argc, char **argv) {
     if (pid == -1) {
         perror("fork");
     } else if (pid == 0) { /* child */
+        /* set pgid to be parent */
+        setpgid(0, getppid());
+
         /* ignore sigusr1 */
         signal(SIGUSR1, SIG_IGN);
 
