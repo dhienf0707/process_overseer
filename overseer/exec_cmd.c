@@ -18,6 +18,7 @@ pid_t pid;
 
 void handler(int sig) {
     if (sig == SIGINT) {
+        printf("SIGINT received\n");
         kill(pid, SIGKILL);
         _exit(EXIT_SUCCESS);
     }
@@ -105,8 +106,6 @@ int main(int argc, char **argv) {
         sigemptyset(&sa.sa_mask);
         sa.sa_handler = handler;
         sigaction(SIGINT, &sa, NULL);
-        sigaction(SIGCHLD, &sa, NULL);
-
 
         /* set of signal to wait for */
         sigset_t set;

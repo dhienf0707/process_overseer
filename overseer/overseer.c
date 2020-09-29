@@ -72,8 +72,8 @@ int num_request = 0; /* number of pending requests, initially none */
 void handler(int sig) {
     if (sig == SIGINT) {
         quit = true;
-        signal(SIGINT, SIG_IGN);
-        killpg(getpgrp(), SIGINT);
+//        signal(SIGINT, SIG_IGN);
+//        killpg(getpgrp(), SIGINT);
         pthread_cond_broadcast(&got_request);
 
         /* free memory left if exist */
