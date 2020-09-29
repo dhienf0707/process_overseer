@@ -30,13 +30,7 @@ void process_cmd(cmd_t *);
 
 void exec_cmd1(cmd_t *);
 
-void child_handler(int sig);
-
-void interrupt_handler(int sig);
-
-void term_handler(int sig);
-
-void usrsig_handler(int sig);
+void handler(int sig);
 
 /* global mutex for our program. */
 pthread_mutex_t request_mutex;
@@ -45,7 +39,7 @@ pthread_mutex_t request_mutex;
 pthread_cond_t got_request;
 
 /* atomic bool variable */
-atomic_bool quit = false;
+static atomic_bool quit = ATOMIC_VAR_INIT(false);
 
 /* create request struct */
 typedef struct request {
@@ -60,7 +54,7 @@ void handle_request(request_t *);
 void *handle_requests_loop(void *);
 
 /* add request to list */
-void add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
+request_t *add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
 
 /* get 1 request from list */
 request_t *get_request();
@@ -75,18 +69,26 @@ request_t *requests = NULL; /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0; /* number of pending requests, initially none */
 
-void child_handler(int sig) {
+void handler(int sig) {
+    if (sig == SIGINT) {
+        quit = true;
+        pthread_cond_broadcast(&got_request);
 
-}
+        /* free memory left if exist */
+        request_t *a_request;
+        while ((a_request = get_request())) {
+            free_request(a_request);
+        }
+    } else if (sig == SIGUSR1) {
+        quit = true;
 
-void interrupt_handler(int sig) {
-    quit = true;
-    pthread_cond_broadcast(&got_request);
+        /* free memory left if exist */
+        request_t *a_request;
+        while ((a_request = get_request())) {
+            free_request(a_request);
+        }
 
-    /* free memory left if exist */
-    request_t *a_request;
-    while ((a_request = get_request())) {
-        free_request(a_request);
+//        _exit(EXIT_SUCCESS);
     }
 }
 
@@ -99,18 +101,20 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    /* add signal handler */
-    /* occur when child finshed executing */
-    signal(SIGCHLD, child_handler);
-
     /* occur when interrupt signal is sent (Ctrl + C)
      * Note: sigaction is preferred here since it would not trigger SA_RESTART
      * which will restart the accept function and won't let the program quit */
-    struct sigaction int_action;
-    int_action.sa_handler = interrupt_handler;
-    int_action.sa_flags = 0;
-    sigemptyset(&int_action.sa_mask);
-    sigaction(SIGINT, &int_action, NULL);
+    struct sigaction sa;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler = handler;
+    sigaction(SIGINT, &sa, NULL);
+
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+
+//    pthread_sigmask(SIG_BLOCK, &set, NULL);
 
     /* start threads */
     pthread_t p_threads[NUM_THREADS]; /* threads */
@@ -123,6 +127,8 @@ int main(int argc, char **argv) {
     for (int i = 0; i < NUM_THREADS; i++) {
         pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
     }
+
+//    pthread_sigmask(SIG_UNBLOCK, &set, NULL);
 
     /* setup networking */
     int server_fd, client_fd;
@@ -180,7 +186,7 @@ int main(int argc, char **argv) {
         printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
 
         /* receive command from client */
-        if (!(cmd_arg = recv_cmd(client_fd)));
+        cmd_arg = recv_cmd(client_fd);
 
         /* add request to the linked list */
         add_request(cmd_arg, &request_mutex, &got_request);
@@ -199,7 +205,7 @@ int main(int argc, char **argv) {
     exit(EXIT_SUCCESS);
 }
 
-void add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
+request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
     //TODO
     request_t *a_request; /* pointer to newly added request */
 
@@ -233,6 +239,7 @@ void add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_con
     /* signal the condition variable */
     pthread_cond_signal(p_cond_var);
 
+    return a_request;
 }
 
 request_t *get_request() {
@@ -294,7 +301,6 @@ void *handle_requests_loop(void *data) {
             free_request(a_request);
         }
     }
-
 }
 
 void process_cmd(cmd_t *cmd_arg) {
@@ -310,142 +316,58 @@ void process_cmd(cmd_t *cmd_arg) {
 }
 
 void exec_cmd1(cmd_t *cmd_arg) {
-    /* flag argument value */
-    int outFile = 0, logFile = 0;
-    struct timeval exec_timeout = {10, 0},
-            term_timeout = {5, 0};
-
-
-    /* concat file arguments into string */
-    char *file_args = (char *) malloc(sizeof(char) * MAX_BUFFER);
-    strcpy(file_args, cmd_arg->file_arg[0]);
-
-    for (int i = 1; i < cmd_arg->file_size; i++) {
-        strcat(file_args, " ");
-        strcat(file_args, cmd_arg->file_arg[i]);
-    }
-
-    /* process flags */
-    for (int i = 0; i < cmd_arg->flag_size; i++) {
-        switch (cmd_arg->flag_arg[i].type) {
-            case o:
-                if ((outFile = open(cmd_arg->flag_arg[i].value,
-                                    O_CREAT | O_APPEND | O_WRONLY,
-                                    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
-                    perror("open");
-                }
-                break;
-            case log:
-                if ((logFile = open(cmd_arg->flag_arg[i].value,
-                                    O_CREAT | O_APPEND | O_WRONLY,
-                                    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
-                    perror("open");
-                }
-                break;
-            case t:
-                exec_timeout.tv_sec = atoi(cmd_arg->flag_arg[i].value);
-                break;
-        }
-    }
-
-
-    /* create pipe to signal the parent of successful executed program */
     pid_t pid;
-    int buf, n, status, result;
-    int pipe_fds[2];
-    pipe2(pipe_fds, O_CLOEXEC);
-    bool executed = false;
+    int status;
 
     /* fork and execute file */
     pid = fork();
     if (pid == -1) {
         perror("fork");
-    } else if (pid == 0) {
-        /* duplicate outfile descriptor onto stdout and stdin if exist */
-        if (outFile) {
-            dup2(outFile, STDOUT_FILENO);
-            dup2(outFile, STDERR_FILENO);
-        }
+    } else if (pid == 0) { /* child */
+        /* flag argument value */
+        char *outFile = "",
+            *logFile = "",
+            *exec_timeout = "10",
+            *term_timeout = "5";
 
-        /* close the reading side of the pipe*/
-        close(pipe_fds[0]);
-
-        /* execute the file */
-        execv(cmd_arg->file_arg[0], cmd_arg->file_arg);
-
-        /* write to the pipe the error code */
-        write(pipe_fds[1], &errno, sizeof(errno));
-
-        /* send error code if exec failed */
-        _exit(errno);
-    } else {
-        /* log management to logfile if exist*/
-        int saved_stdout = dup(STDOUT_FILENO);
-        if (logFile) dup2(logFile, STDOUT_FILENO);
-
-        /* inform of file execution */
-        printf("%s - attempting to execute %s\n", get_time(current_time), file_args);
-
-        /* get the pipe's data to know if there's any error occurred with execv */
-        close(pipe_fds[1]);
-        n = read(pipe_fds[0], &buf, sizeof(buf));
-        if (n == 0) { /* nothing in pipe -> successfully executed */
-            executed = true;
-            sleep(1);
-            printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
-
-            /* pause the parent until either child terminated or timeout */
-            select(0, NULL, NULL, NULL, &exec_timeout);
-        } else {
-            printf("%s - could not execute %s - Error: %s\n",
-                   get_time(current_time), file_args, strerror(buf));
-        }
-        close(pipe_fds[0]);
-
-        /* In here, the code will be continue by either timout or child signal.
-         * We need to use waitpid to get the status of the child to see if it exited or not*/
-        result = waitpid(pid, &status, WNOHANG);
-        if (result == 0) { /* timeout, child is still running */
-            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
-            kill(pid, SIGTERM);
-
-            /* pause the parent until either child terminated or timeout */
-            select(0, NULL, NULL, NULL, &term_timeout);
-
-            result = waitpid(pid, &status, WNOHANG);
-            if (result == 0) { /* timeout, child is still running  */
-                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
-                kill(pid, SIGKILL);
-
-                /* final check */
-                result = waitpid(pid, &status, 0);
-                if (result < 0) {
-                    perror("waitpid");
-                }
-            } else if (result > 0) { /* child has finished*/
-                printf("%s - %d has terminated with status code %d\n",
-                       get_time(current_time), pid, WEXITSTATUS(status));
-            } else {
-                perror("waitpid");
+        /* process flags */
+        for (int i = 0; i < cmd_arg->flag_size; i++) {
+            switch (cmd_arg->flag_arg[i].type) {
+                case o:
+                    outFile = cmd_arg->flag_arg[i].value;
+                    break;
+                case log:
+                    logFile = cmd_arg->flag_arg[i].value;
+                    break;
+                case t:
+                    exec_timeout = cmd_arg->flag_arg[i].value;
+                    break;
             }
-        } else if (result > 0) { /* child has finished */
-            if (executed) {
-                printf("%s - %d has terminated with status code %d\n",
-                       get_time(current_time), pid, WEXITSTATUS(status));
-            }
-        } else {
-            perror("waitpid");
         }
 
-        /* restore the log management to normal stdout */
-        dup2(saved_stdout, STDOUT_FILENO);
-        close(saved_stdout);
+        int arg_size = cmd_arg->file_size + 5;
+        char *args[arg_size + 1];
+        args[0] = "./exec";
+        args[1] = exec_timeout;
+        args[2] = term_timeout;
+        args[3] = outFile;
+        args[4] = logFile;
 
-        /* free the file_args string*/
-        free(file_args);
 
+        for (int i = 5; i < arg_size; i++) {
+            args[i] = cmd_arg->file_arg[i - 5];
+        }
+        args[arg_size] = NULL;
+
+        execv(args[0], args);
+
+        _exit(EXIT_SUCCESS);
+
+    } else { /* parent */
+        waitpid(pid, &status, 0);
     }
 }
+
 
 
 cmd_t *recv_cmd(int client_fd) {
@@ -542,8 +464,10 @@ void free_request(request_t *a_request) {
     /* free flag args and its value if exist
      * Note that some command only has file without flag
      * Note that some flag doesn't have value (mem) */
-    if (a_request->cmd_arg->flag_size && a_request->cmd_arg->flag_arg->value) {
-        free(a_request->cmd_arg->flag_arg->value);
+    for (int i = 0; i < a_request->cmd_arg->flag_size; i++) {
+        if (a_request->cmd_arg->flag_arg[i].value) {
+            free(a_request->cmd_arg->flag_arg[i].value);
+        }
     }
     free(a_request->cmd_arg->flag_arg);
 
