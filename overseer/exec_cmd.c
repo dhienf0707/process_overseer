@@ -14,26 +14,28 @@
 #include <helpers.h>
 #include <wait.h>
 
-void handler (int sig) {
-
+void handler(int sig) {
+    if (sig == SIGUSR1) {
+        raise(SIGKILL);
+    }
 }
 
 int main(int argc, char **argv) {
     char current_time[TIME_BUFFER];
 
-    int exec_timeout = atoi(argv[1]);
-    int term_timeout = atoi(argv[2]);
+    struct timespec exec_timeout = {atoi(argv[1]), 0},
+            term_timeout = {atoi(argv[2]), 0};
 
     int outFile = 0, logFile = 0;
 
     if (strcmp(argv[3], "")) {
-        if ((outFile = open("test",O_CREAT | O_APPEND | O_WRONLY, 0644)) == -1) {
+        if ((outFile = open("test", O_CREAT | O_APPEND | O_WRONLY, 0644)) == -1) {
             perror("open");
         }
     }
 
     if (strcmp(argv[4], "")) {
-        if ((logFile = open(argv[4],O_CREAT | O_APPEND | O_WRONLY,
+        if ((logFile = open(argv[4], O_CREAT | O_APPEND | O_WRONLY,
                             S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
             perror("open");
         }
@@ -43,13 +45,13 @@ int main(int argc, char **argv) {
     argv += 5;
     argc -= 5;
 
-        /* concat file arguments into string */
+    /* concat file arguments into string */
     char file_args[256];
     strcpy(file_args, argv[0]);
 
     for (int i = 1; i < argc; i++) {
         strcat(file_args, " ");
-        strcat(file_args,argv[i]);
+        strcat(file_args, argv[i]);
     }
 
     /* fork info */
@@ -66,6 +68,9 @@ int main(int argc, char **argv) {
     if (pid == -1) {
         perror("fork");
     } else if (pid == 0) { /* child */
+        /* ignore sigusr1 */
+        signal(SIGUSR1, SIG_IGN);
+
         /* duplicate outfile descriptor onto stdout and stdin if exist */
         if (outFile) {
             dup2(outFile, STDOUT_FILENO);
@@ -84,13 +89,20 @@ int main(int argc, char **argv) {
         /* send error code if exec failed */
         _exit(errno);
     } else { /* parent */
-        /* add alarm handler */
+        /* add SIGCHLD handler */
         struct sigaction sa;
         memset(&sa, 0, sizeof(sa));
         sa.sa_flags = 0;
         sigemptyset(&sa.sa_mask);
         sa.sa_handler = handler;
-        sigaction(SIGALRM, &sa, NULL);
+        sigaction(SIGCHLD, &sa, NULL);
+        sigaction(SIGUSR1, &sa, NULL);
+
+        /* set of signal to wait for.
+         * specifically we need to wait for child termination signal */
+        sigset_t set;
+        sigemptyset(&set);
+        sigaddset(&set, SIGCHLD);
 
         /* log management to logfile if exist*/
         if (logFile) dup2(logFile, STDOUT_FILENO);
@@ -106,8 +118,8 @@ int main(int argc, char **argv) {
             sleep(1);
             printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
 
-            /* pause the parent until either child terminated or timeout */
-            alarm(exec_timeout);
+            /* wait for child signal until timeout */
+            sigtimedwait(&set, NULL, &exec_timeout);
         } else {
             printf("%s - could not execute %s - Error: %s\n",
                    get_time(current_time), file_args, strerror(buf));
@@ -116,41 +128,37 @@ int main(int argc, char **argv) {
 
         /* In here, the code will be continue by either timout or child signal.
          * We need to use waitpid to get the status of the child to see if it exited or not*/
-        result = waitpid(pid, &status, 0);
-        if (result == -1) {
-            if (errno == EINTR) { /* timeout, child is still running */
-                printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
-                kill(pid, SIGTERM);
+        result = waitpid(pid, &status, WNOHANG);
+        if (result == 0) { /* timeout, child is still running */
+            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
+            kill(pid, SIGTERM);
 
-                /* alarm 5 seconds after sigterm */
-                alarm(term_timeout);
+            /* wait for child signal until timeout */
+            sigtimedwait(&set, NULL, &term_timeout);
 
+            result = waitpid(pid, &status, WNOHANG);
+            if (result == 0) { /* timeout, child is still running  */
+                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
+                kill(pid, SIGKILL);
+
+                /* final check */
                 result = waitpid(pid, &status, 0);
-                if (result == -1) {
-                    if (errno == EINTR) { /* timeout, child is still running */
-                        printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
-                        kill(pid, SIGKILL);
-
-                        /* final test */
-                        result = waitpid(pid, &status, 0);
-                        if (result == -1) {
-                            perror("waitpid");
-                        }
-                    } else {
-                        perror("waitpid");
-                    }
-                } else {
-                    printf("%s - %d has terminated with status code %d\n",
-                           get_time(current_time), pid, WEXITSTATUS(status));
+                if (result < 0) {
+                    perror("waitpid");
                 }
+            } else if (result > 0) { /* child has finished*/
+                printf("%s - %d has terminated with status code %d\n",
+                       get_time(current_time), pid, WEXITSTATUS(status));
             } else {
                 perror("waitpid");
             }
-        } else {
+        } else if (result > 0) { /* child has finished */
             if (executed) {
                 printf("%s - %d has terminated with status code %d\n",
                        get_time(current_time), pid, WEXITSTATUS(status));
             }
+        } else {
+            perror("waitpid");
         }
 
         exit(EXIT_SUCCESS);
