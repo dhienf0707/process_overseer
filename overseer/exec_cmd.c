@@ -17,33 +17,38 @@
 pid_t pid;
 
 void handler(int sig) {
-    if (sig == SIGUSR1) {
+    if (sig == SIGINT) {
         kill(pid, SIGKILL);
+        _exit(EXIT_SUCCESS);
     }
 }
 
 int main(int argc, char **argv) {
+    /* time buffer */
     char current_time[TIME_BUFFER];
 
+
+    /* exec and termination time out */
     struct timespec exec_timeout = {atoi(argv[1]), 0},
             term_timeout = {atoi(argv[2]), 0};
 
+    /* open logfile and outfile if exist */
     int outFile = 0, logFile = 0;
-
     if (strcmp(argv[3], "")) {
-        if ((outFile = open("test", O_CREAT | O_APPEND | O_WRONLY, 0644)) == -1) {
-            perror("open");
+        if ((outFile = open(argv[3], O_CREAT | O_APPEND | O_WRONLY, 0644)) == -1) {
+            perror("open outfile");
         }
     }
 
     if (strcmp(argv[4], "")) {
         if ((logFile = open(argv[4], O_CREAT | O_APPEND | O_WRONLY,
                             S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
-            perror("open");
+            perror("open logfile");
         }
     }
 
 
+    /* shift the argument variable to the start of the file executable */
     argv += 5;
     argc -= 5;
 
@@ -70,10 +75,10 @@ int main(int argc, char **argv) {
         perror("fork");
     } else if (pid == 0) { /* child */
         /* set pgid to be parent */
-        setpgid(0, getppid());
+        setpgid(0, 0);
 
-        /* ignore sigusr1 */
-        signal(SIGUSR1, SIG_IGN);
+        /* ignore SIGINT */
+        signal(SIGINT, SIG_IGN);
 
         /* duplicate outfile descriptor onto stdout and stdin if exist */
         if (outFile) {
@@ -93,20 +98,24 @@ int main(int argc, char **argv) {
         /* send error code if exec failed */
         _exit(errno);
     } else { /* parent */
-        /* add SIGCHLD handler */
+        /* add alarm handler */
         struct sigaction sa;
         memset(&sa, 0, sizeof(sa));
         sa.sa_flags = 0;
         sigemptyset(&sa.sa_mask);
         sa.sa_handler = handler;
+        sigaction(SIGINT, &sa, NULL);
         sigaction(SIGCHLD, &sa, NULL);
-        sigaction(SIGUSR1, &sa, NULL);
 
-        /* set of signal to wait for.
-         * specifically we need to wait for child termination signal */
+
+        /* set of signal to wait for */
         sigset_t set;
         sigemptyset(&set);
         sigaddset(&set, SIGCHLD);
+
+        /* block child signal in case child terminated  and send signal before
+         * sleeping and being consumed by sigtimedwait */
+        sigprocmask(SIG_BLOCK, &set, NULL);
 
         /* log management to logfile if exist*/
         if (logFile) dup2(logFile, STDOUT_FILENO);
@@ -118,11 +127,16 @@ int main(int argc, char **argv) {
         close(pipe_fds[1]);
         n = read(pipe_fds[0], &buf, sizeof(buf));
         if (n == 0) { /* nothing in pipe -> successfully executed */
+            /* change executed to true */
             executed = true;
+
+            /* sleep for 1 second before informing of a success execution */
             sleep(1);
+
+            /* inform of successful execution */
             printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
 
-            /* wait for child signal until timeout */
+            /* pause the parent until either child terminated or timeout */
             sigtimedwait(&set, NULL, &exec_timeout);
         } else {
             printf("%s - could not execute %s - Error: %s\n",
@@ -131,7 +145,7 @@ int main(int argc, char **argv) {
         close(pipe_fds[0]);
 
         /* In here, the code will be continue by either timout or child signal.
-         * We need to use waitpid to get the status of the child to see if it exited or not*/
+        * We need to use waitpid to get the status of the child to see if it exited or not*/
         result = waitpid(pid, &status, WNOHANG);
         if (result == 0) { /* timeout, child is still running */
             printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);

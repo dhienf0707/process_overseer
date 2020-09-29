@@ -72,8 +72,8 @@ int num_request = 0; /* number of pending requests, initially none */
 void handler(int sig) {
     if (sig == SIGINT) {
         quit = true;
-        signal(SIGUSR1, SIG_IGN);
-        killpg(getpgrp(), SIGUSR1);
+        signal(SIGINT, SIG_IGN);
+        killpg(getpgrp(), SIGINT);
         pthread_cond_broadcast(&got_request);
 
         /* free memory left if exist */
@@ -102,11 +102,11 @@ int main(int argc, char **argv) {
     sa.sa_handler = handler;
     sigaction(SIGINT, &sa, NULL);
 
-    sigset_t set;
-    sigemptyset(&set);
-    sigaddset(&set, SIGINT);
-
-    pthread_sigmask(SIG_BLOCK, &set, NULL);
+//    sigset_t set;
+//    sigemptyset(&set);
+//    sigaddset(&set, SIGINT);
+//
+//    pthread_sigmask(SIG_BLOCK, &set, NULL);
 
     /* start threads */
     pthread_t p_threads[NUM_THREADS]; /* threads */
@@ -120,7 +120,7 @@ int main(int argc, char **argv) {
         pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
     }
 
-    pthread_sigmask(SIG_UNBLOCK, &set, NULL);
+//    pthread_sigmask(SIG_UNBLOCK, &set, NULL);
 
     /* setup networking */
     int server_fd, client_fd;
