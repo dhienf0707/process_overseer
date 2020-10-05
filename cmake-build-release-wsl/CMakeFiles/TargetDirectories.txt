@@ -1,0 +1,13 @@
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/CMakeFiles/rebuild_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/CMakeFiles/edit_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/CMakeFiles/test.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/helpers/CMakeFiles/edit_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/helpers/CMakeFiles/rebuild_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/helpers/CMakeFiles/helpers.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/overseer/CMakeFiles/rebuild_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/overseer/CMakeFiles/edit_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/overseer/CMakeFiles/exec.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/overseer/CMakeFiles/overseer.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/controller/CMakeFiles/rebuild_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/controller/CMakeFiles/edit_cache.dir
+/mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl/controller/CMakeFiles/controller.dir

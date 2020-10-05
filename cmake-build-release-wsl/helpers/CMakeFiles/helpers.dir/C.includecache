@@ -1,0 +1,30 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../helpers/helpers.h
+netinet/in.h
+-
+
+/mnt/d/CLionProjects/process_overseer/helpers/helpers.c
+stdlib.h
+-
+stdio.h
+-
+stdbool.h
+-
+memory.h
+-
+netdb.h
+-
+getopt.h
+-
+helpers.h
+-
+time.h
+-
+

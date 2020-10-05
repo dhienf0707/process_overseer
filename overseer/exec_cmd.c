@@ -18,7 +18,8 @@ pid_t pid;
 
 void handler(int sig) {
     if (sig == SIGUSR1) {
-        kill(pid, SIGKILL);
+        if (!kill(pid, SIGKILL)) perror("Killed");
+        printf("Sent SIGKILL to pid %d\n", pid);
     }
 }
 
@@ -70,7 +71,6 @@ int main(int argc, char **argv) {
         perror("fork");
     } else if (pid == 0) { /* child */
         /* set pgid to be parent */
-        setpgid(0, getppid());
 
         /* ignore sigusr1 */
         signal(SIGUSR1, SIG_IGN);
@@ -132,11 +132,12 @@ int main(int argc, char **argv) {
 
         /* In here, the code will be continue by either timout or child signal.
          * We need to use waitpid to get the status of the child to see if it exited or not*/
+        printf("PID: %d\n", pid);
         result = waitpid(pid, &status, WNOHANG);
         if (result == 0) { /* timeout, child is still running */
             printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
             kill(pid, SIGTERM);
-
+            printf("Result: %d\n", result);
             /* wait for child signal until timeout */
             sigtimedwait(&set, NULL, &term_timeout);
 
