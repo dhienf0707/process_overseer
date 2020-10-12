@@ -17,10 +17,18 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <sys/sysinfo.h>
 
 #define BACKLOG 10
 #define NUM_THREADS 5
 #define MAX_BUFFER 256
+#define MAX_ARRAY_SIZE 100
+
+
+
+
+unsigned long mem_avail(void);
+
 
 cmd_t *recv_cmd(int);
 
@@ -29,17 +37,49 @@ bool recv_flag(int, flag_t *);
 void process_cmd(cmd_t *);
 
 void exec_cmd1(cmd_t *);
+void exec_cmd2(cmd_t *);
+void exec_cmd3(cmd_t *);
 
 void handler(int sig);
 
 /* global mutex for our program. */
 pthread_mutex_t request_mutex;
+pthread_mutex_t entry_mutex;
 
 /* global condition variabe for our program. */
 pthread_cond_t got_request;
+pthread_cond_t got_entry;
 
 /* atomic bool variable */
 static atomic_bool quit = ATOMIC_VAR_INIT(false);
+
+/* create request struct */
+typedef struct entry {
+    pid_t pid;
+    char current_time[MAX_BUFFER];
+    unsigned int mem;
+    int argc;
+    char **argv;
+    struct entry *next;
+} entry_t;
+
+/* add entry to list */
+entry_t *add_entry(pid_t, unsigned int, cmd_t *cmdArg, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
+
+/* get 1 request from list */
+//request_t *get_request();
+
+/* print entry */
+void print_entry(entry_t *);
+
+/* Print all processes that are runing */
+void print_current_process(entry_t *, char[], cmd_t *);
+
+/* Print information of a specified process */
+void print_process_info(entry_t * , pid_t );
+
+/* Kill process using more than threshold memory */
+void kill_overhead_process(entry_t *, double );
 
 /* create request struct */
 typedef struct request {
@@ -62,6 +102,9 @@ request_t *get_request();
 /* free addresses for 1 request */
 void free_request(request_t *);
 
+/* Calculate total memory of a process */
+unsigned int process_memory(pid_t);
+
 
 char current_time[TIME_BUFFER];
 
@@ -69,12 +112,21 @@ request_t *requests = NULL; /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0; /* number of pending requests, initially none */
 
+entry_t *entry = NULL; /* head of linked list of requests */
+entry_t *last_entry = NULL; /* pointer to the last request */
+int num_entry = 0; /* number of process entry, initially none */
+
 void handler(int sig) {
     if (sig == SIGINT) {
         quit = true;
-//        signal(SIGINT, SIG_IGN);
-//        killpg(getpgrp(), SIGINT);
+        printf("%s - received SIGINT\n", get_time(current_time));
+        printf("%s - Cleaning up and terminating %d %d %d\n", get_time(current_time), getpid(), getppid());
+
+
+        //printf("SIGINT: Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
+        kill(getpid(), SIGKILL);
         pthread_cond_broadcast(&got_request);
+        pthread_cond_broadcast(&got_entry);
 
         /* free memory left if exist */
         request_t *a_request;
@@ -197,6 +249,51 @@ int main(int argc, char **argv) {
     exit(EXIT_SUCCESS);
 }
 
+entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
+
+
+    entry_t *a_entry; /* pointer to newly added entry */
+
+    /* create a new request */
+    a_entry = (entry_t *) malloc(sizeof(entry_t));
+    if (!a_entry) {
+        fprintf(stderr, "add_entry: out of memory\n");
+    }
+
+    a_entry->pid = pid;
+    a_entry->mem = mem * 1024; // Convert kilobytes to bytes
+    strcpy(a_entry->current_time , get_time(current_time));
+    a_entry->argc = cmd_arg->file_size;
+    a_entry->argv = cmd_arg->file_arg;
+    a_entry->next = NULL;
+
+
+
+
+    /* modify the linked list of requests */
+    pthread_mutex_lock(p_mutex); /* get exclusive access to the list */
+
+    /* add the request to the end of the list */
+    if (!num_entry) { /* the request list is empty */
+        entry = a_entry;
+        last_entry = a_entry;
+    } else {
+        last_entry->next = a_entry;
+        last_entry = a_entry;
+    }
+
+    /* increase the total of pending requests */
+    num_entry++;
+
+    /* unlock the mutex */
+    pthread_mutex_unlock(p_mutex);
+
+    /* signal the condition variable */
+    pthread_cond_signal(p_cond_var);
+
+    return a_entry;
+}
+
 request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
     //TODO
     request_t *a_request; /* pointer to newly added request */
@@ -301,15 +398,18 @@ void process_cmd(cmd_t *cmd_arg) {
             exec_cmd1(cmd_arg);
             break;
         case cmd2:
+            exec_cmd2(cmd_arg);
             break;
         case cmd3:
+            exec_cmd3(cmd_arg);
             break;
     }
 }
 
 void exec_cmd1(cmd_t *cmd_arg) {
-    pid_t pid;
+
     int status;
+    pid_t pid;
 
     /* fork and execute file */
     pid = fork();
@@ -356,10 +456,44 @@ void exec_cmd1(cmd_t *cmd_arg) {
         _exit(EXIT_SUCCESS);
 
     } else { /* parent */
-        waitpid(pid, &status, 0);
+       while(!quit) {
+           if (process_memory(pid + 1) > 0) {
+//               printf("Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
+//               printf("CoC: %d is using %d memory\n", pid + 1, process_memory(pid + 1));
+               add_entry(pid + 1, process_memory(pid + 1), cmd_arg, &entry_mutex, &got_entry);
+               sleep(1);
+           }
+       }
+
+ //       waitpid(pid, &status, 0);
+
     }
 }
 
+void exec_cmd2(cmd_t *cmd_arg) {
+//    print_entry(entry);
+    if (cmd_arg->flag_arg[0].value) {
+        pid_t mem_pid = (pid_t) atoi(cmd_arg->flag_arg[0].value);
+        printf("PID:%d\n", mem_pid);
+        print_process_info(entry, mem_pid);
+    } else {
+        char mem_time[MAX_BUFFER];
+        strcpy(mem_time, get_time(current_time) ) ;
+        sleep(1);
+        print_current_process(entry, mem_time, cmd_arg);
+    }
+}
+
+void exec_cmd3(cmd_t *cmd_arg) {
+//    printf("Total memory: %lu\n", mem_avail());
+    if (cmd_arg->flag_arg[0].value) {
+        char *eptr;
+        double mem_percent =  strtod(cmd_arg->flag_arg[0].value, &eptr);
+//        printf("percent:%f\n", mem_percent);
+        kill_overhead_process(entry,  mem_percent);
+
+    }
+}
 
 
 cmd_t *recv_cmd(int client_fd) {
@@ -468,4 +602,91 @@ void free_request(request_t *a_request) {
 
     /* free a_request */
     free(a_request);
+}
+
+unsigned int process_memory(pid_t pid_temp){
+    char buf[512];
+    FILE *f;
+
+    // Read the /proc/self/maps
+    sprintf(buf, "/proc/%d/maps", pid_temp);
+    f = fopen(buf, "rt");
+    if (f == NULL) return 0;
+    unsigned int from[MAX_ARRAY_SIZE], to[MAX_ARRAY_SIZE], pgoff[MAX_ARRAY_SIZE], major[MAX_ARRAY_SIZE], minor[MAX_ARRAY_SIZE];
+    unsigned long ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE-1] = 1};
+    char flags[4];
+    int count = 0;
+
+    // Loop through the file line by line
+    while (fgets(buf, 512, f)) {
+
+        // Parse data of each line
+        sscanf(buf, "%x-%x %4c %x %x:%x %lu ", from + count, to + count,
+               flags, pgoff + count, major + count, minor + 1, ino + count);
+//        printf("%s", buf);
+        count++;
+    }
+
+    // Calculate total memory for inode = 0
+    unsigned int total = 0;
+    for (int i = 0; i < MAX_ARRAY_SIZE; i++){
+        if (ino[i] == 0) {
+//            printf("Memory: %d Inode: %lu\n", (to[i]-from[i])/1024, ino[i]);
+            total = total + (to[i]-from[i])/1024;
+        }
+    }
+//    printf("Total: %d\n", total);
+
+    return total;
+}
+
+void print_entry(entry_t *node) {
+    for (; node != NULL; node = node->next)
+    {
+        printf("%s- PID:%d - Mem:%d\n", node->current_time, node->pid, node->mem);
+    }
+}
+
+void print_current_process(entry_t *node, char mem_time[], cmd_t *cmd_arg) {
+    for (; node != NULL; node = node->next)
+    {
+        if (strcmp(node->current_time, mem_time) == 0) {
+            printf("%d %d ", node->pid, node->mem);
+            for (int i = 0; i < node->argc; i++) {
+                printf("%s ", node->argv[i]);
+            }
+            printf("\n");
+        }
+    }
+}
+
+void print_process_info (entry_t *node, pid_t pid) {
+    for (; node != NULL; node = node->next)
+    {
+        if (node->pid == pid) {
+            printf("%s- PID:%d - Mem:%d\n", node->current_time, node->pid, node->mem);
+
+        }
+    }
+}
+
+void kill_overhead_process(entry_t *node, double mem_percent){
+    for (; node != NULL; node = node->next)
+    {
+        double process_percent = (double) node->mem / (double) mem_avail() * 100;
+        if ( process_percent > mem_percent) {
+            kill(node->pid, SIGKILL);
+
+        }
+    }
+}
+
+unsigned long mem_avail()
+{
+    struct sysinfo info;
+
+    if (sysinfo(&info) < 0)
+        return 0;
+
+    return info.freeram;
 }

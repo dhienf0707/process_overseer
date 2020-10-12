@@ -6,10 +6,6 @@
 
 #IncludeRegexTransform: 
 
-../helpers/helpers.h
-netinet/in.h
--
-
 /mnt/d/CLionProjects/process_overseer/test.c
 getopt.h
 -
@@ -21,8 +17,6 @@ stdbool.h
 -
 memory.h
 -
-helpers.h
--
 unistd.h
 -
 signal.h
@@ -32,5 +26,17 @@ wait.h
 errno.h
 -
 pthread.h
+-
+unistd.h
+-
+sys/types.h
+-
+errno.h
+-
+stdio.h
+-
+sys/wait.h
+-
+stdlib.h
 -
 

@@ -17,10 +17,15 @@
 pid_t pid;
 
 void handler(int sig) {
-
+    char current_time[TIME_BUFFER];
     if (sig == SIGINT) {
-        printf("SIGINT received\n");
+
         kill(pid, SIGKILL);
+        sleep(1);
+        int status;
+        waitpid( getppid() + 1, &status, WNOHANG);
+        printf("%s - %d (child of %d)has terminated with status code %d\n",
+                       get_time(current_time), pid, getppid(), WEXITSTATUS(status));
         _exit(EXIT_SUCCESS);
 
     }
@@ -38,13 +43,13 @@ int main(int argc, char **argv) {
     /* open logfile and outfile if exist */
     int outFile = 0, logFile = 0;
     if (strcmp(argv[3], "")) {
-        if ((outFile = open(argv[3], O_CREAT | O_APPEND | O_WRONLY, 0644)) == -1) {
+        if ((outFile = open(argv[3], O_CREAT  | O_WRONLY, 0644)) == -1) {
             perror("open outfile");
         }
     }
 
     if (strcmp(argv[4], "")) {
-        if ((logFile = open(argv[4], O_CREAT | O_APPEND | O_WRONLY,
+        if ((logFile = open(argv[4], O_CREAT  | O_WRONLY,
                             S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
             perror("open logfile");
         }
@@ -77,7 +82,7 @@ int main(int argc, char **argv) {
     if (pid == -1) {
         perror("fork");
     } else if (pid == 0) { /* child */
-        /* set pgid to be parent */
+
 
         setpgid(0, 0);
 
@@ -103,6 +108,8 @@ int main(int argc, char **argv) {
         /* send error code if exec failed */
         _exit(errno);
     } else { /* parent */
+
+
         /* add alarm handler */
         struct sigaction sa;
         memset(&sa, 0, sizeof(sa));
@@ -155,7 +162,7 @@ int main(int argc, char **argv) {
         if (result == 0) { /* timeout, child is still running */
             printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
             kill(pid, SIGTERM);
-            printf("Result: %d\n", result);
+
             /* wait for child signal until timeout */
             sigtimedwait(&set, NULL, &term_timeout);
 
@@ -176,13 +183,17 @@ int main(int argc, char **argv) {
                 perror("waitpid");
             }
         } else if (result > 0) { /* child has finished */
+           // printf("Result: %d\n", result);
             if (executed) {
+
                 printf("%s - %d has terminated with status code %d\n",
                        get_time(current_time), pid, WEXITSTATUS(status));
             }
         } else {
             perror("waitpid");
         }
+
+        close(logFile);
 
         exit(EXIT_SUCCESS);
     }
