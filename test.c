@@ -102,7 +102,7 @@ int main() {
 
     char buf[512];
     FILE *f;
-    sprintf(buf, "/proc/%d/maps", 12614);
+    sprintf(buf, "/proc/%d/maps", 2074);
     f = fopen(buf, "rt");
     unsigned int from[MAX_ARRAY_SIZE], to[MAX_ARRAY_SIZE], pgoff[MAX_ARRAY_SIZE], major[MAX_ARRAY_SIZE], minor[MAX_ARRAY_SIZE];
     unsigned long ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE-1] = 1};

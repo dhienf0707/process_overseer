@@ -17,9 +17,9 @@ void print_usage(char *msg, enum usage type) {
                   "mem [pid] | memkill <percent>}";
 
     if (type == help) {
-        printf("\n%s\n%s\n", msg, usage);
+        printf("%s\n", usage);
     } else if (type == error) {
-        fprintf(stderr, "\n%s\n%s\n", msg, usage);
+        fprintf(stderr, "%s\n", usage);
     }
 }
 

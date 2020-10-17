@@ -23,9 +23,9 @@ void handler(int sig) {
         kill(pid, SIGKILL);
         sleep(1);
         int status;
-        waitpid( getppid() + 1, &status, WNOHANG);
-        printf("%s - %d (child of %d)has terminated with status code %d\n",
-                       get_time(current_time), pid, getppid(), WEXITSTATUS(status));
+        waitpid( getppid() + 1, &status, 0);
+        printf("%s - %d has terminated with status code %d\n",
+                       get_time(current_time), pid, WIFSIGNALED(status));
         _exit(EXIT_SUCCESS);
 
     }
@@ -34,7 +34,6 @@ void handler(int sig) {
 int main(int argc, char **argv) {
     /* time buffer */
     char current_time[TIME_BUFFER];
-
 
     /* exec and termination time out */
     struct timespec exec_timeout = {atoi(argv[1]), 0},

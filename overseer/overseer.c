@@ -99,6 +99,9 @@ request_t *add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
 /* get 1 request from list */
 request_t *get_request();
 
+/* get 1 entry from list */
+entry_t *get_entry();
+
 /* free addresses for 1 request */
 void free_request(request_t *);
 
@@ -112,19 +115,19 @@ request_t *requests = NULL; /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0; /* number of pending requests, initially none */
 
-entry_t *entry = NULL; /* head of linked list of requests */
-entry_t *last_entry = NULL; /* pointer to the last request */
+entry_t *entry = NULL; /* head of linked list of entries */
+entry_t *last_entry = NULL; /* pointer to the last entries */
 int num_entry = 0; /* number of process entry, initially none */
 
 void handler(int sig) {
     if (sig == SIGINT) {
         quit = true;
         printf("%s - received SIGINT\n", get_time(current_time));
-        printf("%s - Cleaning up and terminating %d %d %d\n", get_time(current_time), getpid(), getppid());
-
+        printf("%s - Cleaning up and terminatingg\n", get_time(current_time));
 
         //printf("SIGINT: Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
-        kill(getpid(), SIGKILL);
+//        kill(getpid(), SIGKILL);
+        sleep(1);
         pthread_cond_broadcast(&got_request);
         pthread_cond_broadcast(&got_entry);
 
@@ -133,6 +136,13 @@ void handler(int sig) {
         while ((a_request = get_request())) {
             free_request(a_request);
         }
+
+        entry_t *a_entry;
+        while ((a_entry = get_entry())) {
+            free(a_entry);
+        }
+
+
     }
 }
 
@@ -166,6 +176,10 @@ int main(int argc, char **argv) {
     /* initialize the mutex and condition variable */
     pthread_mutex_init(&request_mutex, NULL);
     pthread_cond_init(&got_request, NULL);
+
+    pthread_mutex_init(&entry_mutex, NULL);
+    pthread_cond_init(&got_entry, NULL);
+
 
     /* create the request-handling threads */
     for (int i = 0; i < NUM_THREADS; i++) {
@@ -331,6 +345,29 @@ request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t 
     return a_request;
 }
 
+entry_t *get_entry() {
+    entry_t *a_entry; /* pointer to a request */
+
+    if (num_entry > 0) {
+        /* get request from the head of the list */
+        a_entry = entry;
+        entry = a_entry->next;
+
+        /* if request is the last request on the list */
+        if (entry == NULL) {
+            last_entry = NULL;
+        }
+
+        /* decrement the number of pending requests */
+        num_entry--;
+    } else {
+        a_entry = NULL;
+    }
+
+    /* return the request to the caller */
+    return a_entry;
+}
+
 request_t *get_request() {
     request_t *a_request; /* pointer to a request */
 
@@ -456,22 +493,28 @@ void exec_cmd1(cmd_t *cmd_arg) {
         _exit(EXIT_SUCCESS);
 
     } else { /* parent */
+
        while(!quit) {
            if (process_memory(pid + 1) > 0) {
-//               printf("Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
-//               printf("CoC: %d is using %d memory\n", pid + 1, process_memory(pid + 1));
                add_entry(pid + 1, process_memory(pid + 1), cmd_arg, &entry_mutex, &got_entry);
+           //    print_entry(entry);
                sleep(1);
+
+           }
+           int result;
+           result = waitpid(pid, &status, WNOHANG);
+           if (result == -1) {
+               break;
            }
        }
 
- //       waitpid(pid, &status, 0);
+
 
     }
 }
 
 void exec_cmd2(cmd_t *cmd_arg) {
-//    print_entry(entry);
+  //  print_entry(entry);
     if (cmd_arg->flag_arg[0].value) {
         pid_t mem_pid = (pid_t) atoi(cmd_arg->flag_arg[0].value);
         printf("PID:%d\n", mem_pid);
@@ -604,6 +647,8 @@ void free_request(request_t *a_request) {
     free(a_request);
 }
 
+
+
 unsigned int process_memory(pid_t pid_temp){
     char buf[512];
     FILE *f;
@@ -611,7 +656,10 @@ unsigned int process_memory(pid_t pid_temp){
     // Read the /proc/self/maps
     sprintf(buf, "/proc/%d/maps", pid_temp);
     f = fopen(buf, "rt");
-    if (f == NULL) return 0;
+    if (f == NULL) {
+        return 0;
+    }
+
     unsigned int from[MAX_ARRAY_SIZE], to[MAX_ARRAY_SIZE], pgoff[MAX_ARRAY_SIZE], major[MAX_ARRAY_SIZE], minor[MAX_ARRAY_SIZE];
     unsigned long ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE-1] = 1};
     char flags[4];
@@ -636,7 +684,7 @@ unsigned int process_memory(pid_t pid_temp){
         }
     }
 //    printf("Total: %d\n", total);
-
+    fclose(f);
     return total;
 }
 
