@@ -1,4 +1,0 @@
-/usr/bin/cmake -DCMAKE_BUILD_TYPE=Release -G "CodeBlocks - Unix Makefiles" /mnt/d/CLionProjects/process_overseer
--- Configuring done
--- Generating done
--- Build files have been written to: /mnt/d/CLionProjects/process_overseer/cmake-build-release-wsl

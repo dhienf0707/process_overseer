@@ -1,3 +1,0 @@
-2020-10-11 18:34:09 - attempting to execute /mnt/d/programs/simple 4
-2020-10-11 18:34:10 - /mnt/d/programs/simple 4 has been executed with pid 23158
-2020-10-11 18:34:13 - 23158 has terminated with status code 5

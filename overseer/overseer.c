@@ -123,7 +123,7 @@ void handler(int sig) {
     if (sig == SIGINT) {
         quit = true;
         printf("%s - received SIGINT\n", get_time(current_time));
-        printf("%s - Cleaning up and terminatingg\n", get_time(current_time));
+        printf("%s - Cleaning up and terminating\n", get_time(current_time));
 
         //printf("SIGINT: Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
 //        kill(getpid(), SIGKILL);
@@ -287,8 +287,8 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t 
     /* modify the linked list of requests */
     pthread_mutex_lock(p_mutex); /* get exclusive access to the list */
 
-    /* add the request to the end of the list */
-    if (!num_entry) { /* the request list is empty */
+    /* add the entry to the end of the list */
+    if (!num_entry) { /* the entry list is empty */
         entry = a_entry;
         last_entry = a_entry;
     } else {
@@ -296,7 +296,7 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t 
         last_entry = a_entry;
     }
 
-    /* increase the total of pending requests */
+    /* increase the total of pending entry */
     num_entry++;
 
     /* unlock the mutex */
@@ -514,10 +514,10 @@ void exec_cmd1(cmd_t *cmd_arg) {
 }
 
 void exec_cmd2(cmd_t *cmd_arg) {
-  //  print_entry(entry);
+    printf("as\n");
+    print_entry(entry);
     if (cmd_arg->flag_arg[0].value) {
         pid_t mem_pid = (pid_t) atoi(cmd_arg->flag_arg[0].value);
-        printf("PID:%d\n", mem_pid);
         print_process_info(entry, mem_pid);
     } else {
         char mem_time[MAX_BUFFER];
@@ -696,7 +696,8 @@ void print_entry(entry_t *node) {
 }
 
 void print_current_process(entry_t *node, char mem_time[], cmd_t *cmd_arg) {
-    for (; node != NULL; node = node->next)
+    //for (; node != NULL; )
+    while (node!= NULL)
     {
         if (strcmp(node->current_time, mem_time) == 0) {
             printf("%d %d ", node->pid, node->mem);
@@ -705,6 +706,7 @@ void print_current_process(entry_t *node, char mem_time[], cmd_t *cmd_arg) {
             }
             printf("\n");
         }
+        node = node->next;
     }
 }
 
