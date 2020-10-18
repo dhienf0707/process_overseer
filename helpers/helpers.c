@@ -223,6 +223,8 @@ cmd_t *handle_args(int argc, char **argv) {
     cmd_arg->flag_size = flag_size;
     cmd_arg->file_size = argc - file_index;
     cmd_arg->file_arg = argv + file_index;
+
+    return cmd_arg;
 }
 
 void send_str(int sockfd, char *msg) {

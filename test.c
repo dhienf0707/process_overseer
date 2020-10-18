@@ -8,6 +8,7 @@
 #include <wait.h>
 #include <errno.h>
 #include <pthread.h>
+#include <proc_service.h>
 
 //
 // Created by duchi on 9/19/2020.
