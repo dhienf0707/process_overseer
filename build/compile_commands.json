@@ -1,0 +1,32 @@
+[
+{
+  "directory": "/home/hoangqwe159/process_overseer/build",
+  "command": "/usr/bin/cc  -I/home/hoangqwe159/process_overseer/helpers  -g   -std=gnu99 -o CMakeFiles/test.dir/test.c.o   -c /home/hoangqwe159/process_overseer/test.c",
+  "file": "/home/hoangqwe159/process_overseer/test.c"
+},
+{
+  "directory": "/home/hoangqwe159/process_overseer/build/helpers",
+  "command": "/usr/bin/cc  -I/home/hoangqwe159/process_overseer/helpers  -g   -std=gnu99 -o CMakeFiles/helpers.dir/helpers.c.o   -c /home/hoangqwe159/process_overseer/helpers/helpers.c",
+  "file": "/home/hoangqwe159/process_overseer/helpers/helpers.c"
+},
+{
+  "directory": "/home/hoangqwe159/process_overseer/build/overseer",
+  "command": "/usr/bin/cc  -I/home/hoangqwe159/process_overseer/helpers  -g   -std=gnu99 -o CMakeFiles/exec.dir/exec_cmd.c.o   -c /home/hoangqwe159/process_overseer/overseer/exec_cmd.c",
+  "file": "/home/hoangqwe159/process_overseer/overseer/exec_cmd.c"
+},
+{
+  "directory": "/home/hoangqwe159/process_overseer/build/overseer",
+  "command": "/usr/bin/cc   -g   -std=gnu99 -o CMakeFiles/simple.dir/simple.c.o   -c /home/hoangqwe159/process_overseer/overseer/simple.c",
+  "file": "/home/hoangqwe159/process_overseer/overseer/simple.c"
+},
+{
+  "directory": "/home/hoangqwe159/process_overseer/build/overseer",
+  "command": "/usr/bin/cc  -I/home/hoangqwe159/process_overseer/overseer -I/home/hoangqwe159/process_overseer/helpers  -g   -std=gnu99 -o CMakeFiles/overseer.dir/overseer.c.o   -c /home/hoangqwe159/process_overseer/overseer/overseer.c",
+  "file": "/home/hoangqwe159/process_overseer/overseer/overseer.c"
+},
+{
+  "directory": "/home/hoangqwe159/process_overseer/build/controller",
+  "command": "/usr/bin/cc  -I/home/hoangqwe159/process_overseer/controller/{CMAKE_CURRENT_SOURCE_DIR} -I/home/hoangqwe159/process_overseer/helpers  -g   -std=gnu99 -o CMakeFiles/controller.dir/controller.c.o   -c /home/hoangqwe159/process_overseer/controller/controller.c",
+  "file": "/home/hoangqwe159/process_overseer/controller/controller.c"
+}
+]

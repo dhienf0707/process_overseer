@@ -9,5 +9,6 @@ target_include_directories(overseer PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # add exec target
 add_executable(exec exec_cmd.c)
+add_executable(simple simple.c)
 # link libraries
 target_link_libraries(exec helpers)
