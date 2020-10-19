@@ -17,14 +17,13 @@
 pid_t pid;
 
 void handler(int sig, siginfo_t *siginfo, void *context) {
-    char current_time[TIME_BUFFER];
     if (sig == SIGINT) {
         kill(pid, SIGKILL);
         sleep(1);
         int status;
         waitpid(pid, &status, 0);
         printf("%s - %d has terminated with status code %d\n",
-               get_time(current_time), pid, WEXITSTATUS(status));
+               get_time(), pid, WEXITSTATUS(status));
         _exit(EXIT_SUCCESS);
     }
 }
@@ -131,7 +130,7 @@ int main(int argc, char **argv) {
             dup2(logFile, STDOUT_FILENO);
 
         /* inform of file execution */
-        printf("%s - attempting to execute %s\n", get_time(current_time), file_args);
+        printf("%s - attempting to execute %s\n", get_time(), file_args);
 
         /* get the pipe's data to know if there's any error occurred with execv */
         close(pipe_fds[1]);
@@ -144,13 +143,13 @@ int main(int argc, char **argv) {
             sleep(1);
 
             /* inform of successful execution */
-            printf("%s - %s has been executed with pid %d\n", get_time(current_time), file_args, pid);
+            printf("%s - %s has been executed with pid %d\n", get_time(), file_args, pid);
 
             /* pause the parent until either child terminated or timeout */
             sigtimedwait(&set, NULL, &exec_timeout);
         } else {
             printf("%s - could not execute %s - Error: %s\n",
-                   get_time(current_time), file_args, strerror(buf));
+                   get_time(), file_args, strerror(buf));
         }
         close(pipe_fds[0]);
 
@@ -160,7 +159,7 @@ int main(int argc, char **argv) {
 
         result = waitpid(pid, &status, WNOHANG);
         if (result == 0) { /* timeout, child is still running */
-            printf("%s - sent SIGTERM to %d\n", get_time(current_time), pid);
+            printf("%s - sent SIGTERM to %d\n", get_time(), pid);
             kill(pid, SIGTERM);
 
             /* wait for child signal until timeout */
@@ -168,7 +167,7 @@ int main(int argc, char **argv) {
 
             result = waitpid(pid, &status, WNOHANG);
             if (result == 0) { /* timeout, child is still running  */
-                printf("%s - sent SIGKILL to %d\n", get_time(current_time), pid);
+                printf("%s - sent SIGKILL to %d\n", get_time(), pid);
                 kill(pid, SIGKILL);
 
                 /* final check */
@@ -176,12 +175,12 @@ int main(int argc, char **argv) {
                 if (result < 0) {
                     perror("waitpid");
                 } else {
-                    printf("%s - %d has terminated with status code %d\n", get_time(current_time), pid,
+                    printf("%s - %d has terminated with status code %d\n", get_time(), pid,
                            WEXITSTATUS(status));
                 }
             } else if (result > 0) { /* child has finished*/
                 printf("%s - %d has terminated with status code %d\n",
-                       get_time(current_time), pid, WEXITSTATUS(status));
+                       get_time(), pid, WEXITSTATUS(status));
             } else {
                 perror("waitpid");
             }
@@ -190,7 +189,7 @@ int main(int argc, char **argv) {
             if (executed) {
 
                 printf("%s - %d has terminated with status code %d\n",
-                       get_time(current_time), pid, WEXITSTATUS(status));
+                       get_time(), pid, WEXITSTATUS(status));
             }
         } else {
             perror("waitpid");

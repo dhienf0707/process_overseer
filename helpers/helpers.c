@@ -11,6 +11,8 @@
 #include <helpers.h>
 #include <time.h>
 
+char current_time[TIME_BUFFER];
+
 void print_usage(char *msg, enum usage type) {
     char *usage = "Usage: controller <address> <port> "
                   "{[-o out_file] [-log log_file] [-t seconds] <file> [arg...] | "
@@ -23,16 +25,9 @@ void print_usage(char *msg, enum usage type) {
     }
 }
 
-cmd_t *handle_args(int argc, char **argv) {
+cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     struct hostent *he; /* host entry */
     uint16_t port; /* host's port */
-
-    /* create flags for 3 command sets */
-    flag_t *flag_arg = (flag_t *) malloc(sizeof(flag_t) * 3);
-
-    /* variable to track what command set is used */
-    cmd_t *cmd_arg = (cmd_t *) malloc(sizeof(cmd_t));
-    int flag_size = 0;
 
     /* if there is only 2 argument and it's --help */
     if (strcmp(argv[1], "--help") == 0) {
@@ -69,18 +64,16 @@ cmd_t *handle_args(int argc, char **argv) {
     /* check if third argument is memkill or mem */
     if (strcmp(argv[3], "mem") == 0) {
         /* set up mem flag's value */
-        flag_arg->type = mem;
-        flag_size++;
+        cmd_arg->type = cmd2;
+        cmd_arg->flag_arg->type = mem;
+        cmd_arg->flag_arg->value = NULL;
+        cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the optional argument */
-            flag_arg->value = argv[4];
+            cmd_arg->flag_arg->value = argv[4];
         }
 
         /* return the command */
-        cmd_arg->type = cmd2;
-        cmd_arg->flag_arg = flag_arg;
-        cmd_arg->flag_size = flag_size;
-
         if (argc < 6) return cmd_arg;
         else {
             print_usage("Too many arguments for 'mem' cmd", error);
@@ -88,20 +81,19 @@ cmd_t *handle_args(int argc, char **argv) {
         }
     } else if (strcmp(argv[3], "memkill") == 0) {
         /* setup memkill flag */
-        flag_arg->type = memkill;
-        flag_size++;
+        cmd_arg->type = cmd3;
+        cmd_arg->flag_arg->type = memkill;
+        cmd_arg->flag_arg->value = NULL;
+        cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the required argument */
-            flag_arg->value = argv[4];
+            cmd_arg->flag_arg->value = argv[4];
         } else {
             print_usage("Please specify percentage for memkill", error);
             exit(EXIT_FAILURE);
         }
 
         /* return the command */
-        cmd_arg->type = cmd3;
-        cmd_arg->flag_arg = flag_arg;
-        cmd_arg->flag_size = flag_size;
 
         if (argc < 6) return cmd_arg;
         else {
@@ -121,15 +113,17 @@ cmd_t *handle_args(int argc, char **argv) {
     /* Executable file pointer */
     cmd_arg->file_size = 0;
 
-    flag_t *first_arg = flag_arg; /* head of flag_arg array */
+    flag_t *first_arg = cmd_arg->flag_arg; /* head of flag_arg array */
 
-    /* A copy of argv (to reserve the order of the original argv) */
-    char **argv_cpy = (char **) malloc(sizeof(char *) * argc);
-    for (int i = 0; i < argc; i++) {
-        argv_cpy[i] = malloc(strlen(argv[i]) + 1);
-        strcpy(argv_cpy[i], argv[i]);
-    }
-
+//    /* A copy of argv (to reserve the order of the original argv) */
+//    char *argv_cpy[argc];
+//    for (int i = 0; i < argc; i++) {
+//        argv_cpy[i] = strdup(argv[i]);
+//    }
+//
+//    for (int i = 0; i < argc; i++) {
+//        printf("%s\n", argv[i]);
+//    }
 
     /* optstring for getopt */
     const char *const short_options = "o:t:";
@@ -138,14 +132,14 @@ cmd_t *handle_args(int argc, char **argv) {
             {NULL, 0,                  NULL, 0}
     };
 
-    while ((ch = getopt_long_only(argc, argv_cpy, short_options, long_options, NULL)) != -1) {
+    while ((ch = getopt_long_only(argc, argv, short_options, long_options, NULL)) != -1) {
         switch (ch) {
             case 'o':
                 /* create flag for output */
-                flag_arg->type = o;
-                flag_arg->value = optarg;
-                flag_arg++;
-                flag_size++;
+                cmd_arg->flag_arg->type = o;
+                cmd_arg->flag_arg->value = optarg;
+                cmd_arg->flag_arg++;
+                cmd_arg->flag_size++;
 
                 isFlag = true; /* set the command set 1 to true */
                 oFlag = optind - 1; /* set the position of output flag */
@@ -160,10 +154,10 @@ cmd_t *handle_args(int argc, char **argv) {
                 break;
             case 'l':
                 /* create flag for log */
-                flag_arg->type = log;
-                flag_arg->value = optarg;
-                flag_arg++;
-                flag_size++;
+                cmd_arg->flag_arg->type = log;
+                cmd_arg->flag_arg->value = optarg;
+                cmd_arg->flag_arg++;
+                cmd_arg->flag_size++;
 
                 isFlag = true; /* set command set 1 to true */
                 lFlag = optind - 1;  /* set the position of lflag */
@@ -182,10 +176,10 @@ cmd_t *handle_args(int argc, char **argv) {
                 break;
             case 't':
                 /* create flag for time */
-                flag_arg->type = t;
-                flag_arg->value = optarg;
-                flag_arg++;
-                flag_size++;
+                cmd_arg->flag_arg->type = t;
+                cmd_arg->flag_arg->value = optarg;
+                cmd_arg->flag_arg++;
+                cmd_arg->flag_size++;
 
                 isFlag = true; /* set the first command set to true */
                 tFlag = optind - 1; /* store the position of the time flag */
@@ -229,27 +223,28 @@ cmd_t *handle_args(int argc, char **argv) {
     /* set up first command group and return */
     cmd_arg->type = cmd1;
     cmd_arg->flag_arg = first_arg;
-    cmd_arg->flag_size = flag_size;
     cmd_arg->file_size = argc - file_index;
     cmd_arg->file_arg = argv + file_index;
 
     return cmd_arg;
 }
 
-void send_str(int sockfd, char *msg) {
+bool send_str(int sockfd, char *msg) {
     /* send the length of the string */
     int msgLen = strlen(msg) + 1;
     uint32_t netLen = htonl(msgLen);
     if (send(sockfd, &netLen, sizeof(netLen), 0) == -1) {
         perror("send");
-        exit(EXIT_FAILURE);
+        return false;
     }
 
     /* send the message */
     if (send(sockfd, msg, msgLen, 0) != msgLen) {
-        fprintf(stderr, "CLIENT: send did not send all data\n");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "send did not send all data\n");
+        return false;
     }
+
+    return true;
 }
 
 char *recv_str(int client_fd) {
@@ -265,13 +260,14 @@ char *recv_str(int client_fd) {
     char *msg = (char *) malloc(sizeof(char) * msgLen);
     if (recv(client_fd, msg, msgLen, 0) != msgLen) {
         fprintf(stderr, "recv got invalid message\n");
+        free(msg);
         return NULL;
     }
 
     return msg;
 }
 
-char *get_time(char *current_time) {
+char *get_time() {
     time_t timer;
     struct tm *tm_info;
 

@@ -8,6 +8,7 @@
 #define MAX_BUFFER 512
 
 #include <netinet/in.h>
+#include <z3.h>
 
 /* enum for option flag type */
 enum flag_type {
@@ -45,15 +46,15 @@ enum usage {
 void print_usage(char *, enum usage);
 
 /* handle commandline argument */
-cmd_t *handle_args(int, char **);
+cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg);
 
 /* send string over tcp/ip */
-void send_str(int, char *);
+bool send_str(int, char *);
 
 /* receive string over tcp/ip */
 char *recv_str(int);
 
 /* return the current time in %Y-%m-%d %H:%M:%S format */
-char *get_time(char *);
+char *get_time();
 
 #endif //PROCESS_OVERSEER_HELPERS_H

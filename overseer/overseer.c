@@ -47,7 +47,7 @@ pthread_cond_t got_request;
 /* create request struct */
 typedef struct entry {
     pid_t pid;
-    char current_time[MAX_BUFFER];
+    char current_time[TIME_BUFFER];
     unsigned int mem;
     int argc;
     char **argv;
@@ -90,8 +90,6 @@ entry_t *get_entry();
 /* free addresses for 1 request */
 void free_cmd(cmd_t *a_request);
 
-char current_time[TIME_BUFFER]; // current time's buffer
-
 request_t *requests = NULL;     /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0;            /* number of pending requests, initially none */
@@ -105,12 +103,8 @@ sigset_t set; /* set of signals to be blocked (and waiting on) */
 void handler(int sig, siginfo_t *siginfo, void *context) {
     if (sig == SIGINT) {
         quit = true;
-        printf("%s - received SIGINT\n",
-               get_time(current_time)
-        );
-        printf("%s - Cleaning up and terminating\n",
-               get_time(current_time)
-        );
+        printf("%s - received SIGINT\n", get_time());
+        printf("%s - Cleaning up and terminating\n", get_time());
 
         //printf("SIGINT: Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
         //        kill(getpid(), SIGKILL);
@@ -228,10 +222,13 @@ int main(int argc, char **argv) {
             }
         }
 
-        printf("%s - connection received from %s\n", get_time(current_time), inet_ntoa(client_addr.sin_addr));
+        printf("%s - connection received from %s\n", get_time(), inet_ntoa(client_addr.sin_addr));
 
         /* receive command from client */
-        cmd_arg = recv_cmd(client_fd);
+        if (!(cmd_arg = recv_cmd(client_fd))) {
+            close(client_fd);
+            continue;
+        }
 
         if (cmd_arg->type == cmd1) { // add request cmd1 to request pool
             /* add request to the linked list */
@@ -433,7 +430,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
         send_process_info(entry, mem_pid, client_fd);
     } else {
         char mem_time[TIME_BUFFER];
-        strcpy(mem_time, get_time(current_time));
+        strcpy(mem_time, get_time());
         int year, month, date, hour, minute, second;
         sscanf(mem_time, "%d-%d-%d %d:%d:%d", &year, &month, &date, &hour, &minute, &second);
         sprintf(mem_time, "%d-%d-%d %d:%d:%d", year, month, date, hour, minute, second - 1);
@@ -514,7 +511,7 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t 
 
     a_entry->pid = pid;
     a_entry->mem = mem * 1024; // Convert kilobytes to bytes
-    strcpy(a_entry->current_time, get_time(current_time));
+    strcpy(a_entry->current_time, get_time());
     a_entry->argc = cmd_arg->file_size;
     a_entry->argv = cmd_arg->file_arg;
     a_entry->next = NULL;
@@ -578,7 +575,9 @@ void send_current_process(entry_t *node, char *mem_time, int client_fd) {
         }
     }
 
-    send_str(client_fd, buff);
+    if (!send_str(client_fd, buff)) {
+        fprintf(stderr, "error sending current process entries\n");
+    }
 //    printf("%s", buff);
     free(buff);
 }
@@ -594,7 +593,9 @@ void send_process_info(entry_t *node, pid_t pid, int client_fd) {
         }
     }
 
-    send_str(client_fd, buff);
+    if (!send_str(client_fd, buff)) {
+        fprintf(stderr, "error sending %d's info\n", pid);
+    }
 //    printf("%s", buff);
     free(buff);
 }
