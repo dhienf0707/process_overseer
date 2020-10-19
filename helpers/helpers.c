@@ -17,9 +17,9 @@ void print_usage(char *msg, enum usage type) {
                   "mem [pid] | memkill <percent>}";
 
     if (type == help) {
-        printf("%s\n", usage);
+        printf("%s\n%s\n", msg, usage);
     } else if (type == error) {
-        fprintf(stderr, "%s\n", usage);
+        fprintf(stderr, "%s\n%s\n", msg, usage);
     }
 }
 
@@ -35,9 +35,14 @@ cmd_t *handle_args(int argc, char **argv) {
     int flag_size = 0;
 
     /* if there is only 2 argument and it's --help */
-    if (argc == 2 && strcmp(argv[1], "--help") == 0) {
-        print_usage("Help Menu:", help);
-        exit(EXIT_SUCCESS);
+    if (strcmp(argv[1], "--help") == 0) {
+        if (argc == 2) {
+            print_usage("Help Menu:", help);
+            exit(EXIT_SUCCESS);
+        } else {
+            print_usage("Too many arguments for 'help' cmd", error);
+            exit(EXIT_FAILURE);
+        }
     }
 
     /* if not help there must be at least 4 arguments */
@@ -54,7 +59,11 @@ cmd_t *handle_args(int argc, char **argv) {
     cmd_arg->host_addr = *((struct in_addr *) he->h_addr);
 
     /* get the port from second argument */
-    port = atoi(argv[2]);
+    if (!(port = atoi(argv[2]))) {
+        print_usage("Port must between 1 to 65535", error);
+        exit(EXIT_FAILURE);
+    }
+
     cmd_arg->port = port;
 
     /* check if third argument is memkill or mem */
@@ -74,7 +83,7 @@ cmd_t *handle_args(int argc, char **argv) {
 
         if (argc < 6) return cmd_arg;
         else {
-            print_usage("Too many arguments", error);
+            print_usage("Too many arguments for 'mem' cmd", error);
             exit(EXIT_FAILURE);
         }
     } else if (strcmp(argv[3], "memkill") == 0) {
@@ -96,7 +105,7 @@ cmd_t *handle_args(int argc, char **argv) {
 
         if (argc < 6) return cmd_arg;
         else {
-            print_usage("Too many arguments", error);
+            print_usage("Too many arguments for 'memkill' cmd", error);
             exit(EXIT_FAILURE);
         }
     }
