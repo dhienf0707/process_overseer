@@ -44,6 +44,12 @@ int main(int argc, char **argv) {
     /* send command set to server */
     send_cmd(sockfd, cmd_arg);
 
+    /* receive the response if cmd type is 2 */
+    if (cmd_arg->type == cmd2) {
+        char *ret = recv_str(sockfd);
+        printf("%s", ret);
+    }
+
     /* close connection and exit */
     close(sockfd);
     exit(EXIT_SUCCESS);

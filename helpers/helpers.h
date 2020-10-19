@@ -5,6 +5,7 @@
 #ifndef PROCESS_OVERSEER_HELPERS_H
 #define PROCESS_OVERSEER_HELPERS_H
 #define TIME_BUFFER 20
+#define MAX_BUFFER 512
 
 #include <netinet/in.h>
 
