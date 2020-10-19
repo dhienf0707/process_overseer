@@ -23,26 +23,36 @@
 #define NUM_THREADS 5
 #define MAX_ARRAY_SIZE 100
 
-unsigned long mem_avail(void);
+/* create request struct */
+typedef struct request {
+    cmd_t *cmd_arg;
+    struct request *next;
+} request_t;
 
-cmd_t *recv_cmd(int);
+/* request pool global variables */
+request_t *requests = NULL;     /* head of linked list of requests */
+request_t *last_request = NULL; /* pointer to the last request */
+int num_request = 0;            /* number of pending requests, initially none */
+pthread_mutex_t request_mutex; /* global mutex for request pool */
+pthread_cond_t got_request; /* global condition variabe for our program. */
 
-bool recv_flag(int, flag_t *);
+/* add request to list */
+request_t *add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
 
+/* get 1 request from list */
+request_t *get_request();
+
+/* handle requests loop for threads */
+void *handle_requests_loop(void *);
+
+/* process cmd1 */
 void process_cmd1(cmd_t *cmd_arg);
 
+/* process cmd2 */
 void process_cmd2(cmd_t *cmd_arg, int client_fd);
 
-void process_cmd3(cmd_t *cmd_arg, int client_fd);
-
-void handler(int, siginfo_t *, void *);
-
-/* global mutex for our program. */
-pthread_mutex_t request_mutex;
-pthread_mutex_t entry_mutex;
-
-/* global condition variabe for our program. */
-pthread_cond_t got_request;
+/* process cmd3 */
+void process_cmd3(cmd_t *cmd_arg);
 
 /* create request struct */
 typedef struct entry {
@@ -54,8 +64,20 @@ typedef struct entry {
     struct entry *next;
 } entry_t;
 
+/* entry global variables */
+entry_t *entry = NULL;      /* head of linked list of entries */
+entry_t *last_entry = NULL; /* pointer to the last entries */
+int num_entry = 0;          /* number of process entry, initially none */
+pthread_mutex_t entry_mutex; /* global mutex for entry pool */
+
+/* get available memory */
+unsigned long mem_avail(void);
+
+/* get 1 entry from list */
+entry_t *get_entry();
+
 /* add entry to list */
-entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t *p_mutex);
+entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg);
 
 /* Print all processes that are runing */
 void send_current_process(entry_t *node, char *mem_time, int client_fd);
@@ -69,35 +91,16 @@ void kill_overhead_process(entry_t *, double);
 /* Calculate total memory of a process */
 unsigned int process_memory(pid_t);
 
-/* create request struct */
-typedef struct request {
-    cmd_t *cmd_arg;
-    struct request *next;
-} request_t;
+cmd_t *recv_cmd(int); /* receive commands from clients */
 
-/* handle requests loop for threads */
-void *handle_requests_loop(void *);
+bool recv_flag(int, flag_t *); /* receive flags from client */
 
-/* add request to list */
-request_t *add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
+void handler(int, siginfo_t *, void *); /* signal handler */
 
-/* get 1 request from list */
-request_t *get_request();
+void free_cmd(cmd_t *a_request); /* free addresses for 1 request */
 
-/* get 1 entry from list */
-entry_t *get_entry();
-
-/* free addresses for 1 request */
-void free_cmd(cmd_t *a_request);
-
-request_t *requests = NULL;     /* head of linked list of requests */
-request_t *last_request = NULL; /* pointer to the last request */
-int num_request = 0;            /* number of pending requests, initially none */
-
-entry_t *entry = NULL;      /* head of linked list of entries */
-entry_t *last_entry = NULL; /* pointer to the last entries */
-int num_entry = 0;          /* number of process entry, initially none */
 static atomic_bool quit = ATOMIC_VAR_INIT(false); /* atomic bool variable for quitting */
+
 sigset_t set; /* set of signals to be blocked (and waiting on) */
 
 void handler(int sig, siginfo_t *siginfo, void *context) {
@@ -119,9 +122,7 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
         }
 
         entry_t *a_entry;
-        while ((
-                a_entry = get_entry()
-        )) {
+        while ((a_entry = get_entry())) {
             free(a_entry);
         }
     }
@@ -237,7 +238,7 @@ int main(int argc, char **argv) {
             process_cmd2(cmd_arg, client_fd);
             free_cmd(cmd_arg);
         } else {
-            process_cmd3(cmd_arg, client_fd);
+            process_cmd3(cmd_arg);
             free_cmd(cmd_arg);
         }
 
@@ -404,10 +405,10 @@ void process_cmd1(cmd_t *cmd_arg) {
         }
 
         int child_pid = siginfo.si_value.sival_int;
-
+        unsigned int mem;
         while (!quit) {
-            if (process_memory(child_pid) > 0) {
-                add_entry(child_pid, process_memory(child_pid), cmd_arg, &entry_mutex);
+            if ((mem = process_memory(child_pid)) > 0) {
+                add_entry(child_pid, mem, cmd_arg);
                 // print_entry(entry);
                 sleep(1);
             }
@@ -443,7 +444,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
     }
 }
 
-void process_cmd3(cmd_t *cmd_arg, int client_fd) {
+void process_cmd3(cmd_t *cmd_arg) {
     if (cmd_arg->flag_arg[0].value) {
         char *eptr;
         double mem_percent = strtod(cmd_arg->flag_arg[0].value, &eptr);
@@ -499,7 +500,7 @@ unsigned int process_memory(pid_t pid_temp) {
     return total;
 }
 
-entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t *p_mutex) {
+entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
 
     entry_t *a_entry; /* pointer to newly added entry */
 
@@ -517,7 +518,7 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t 
     a_entry->next = NULL;
 
     /* modify the linked list of entries */
-    pthread_mutex_lock(p_mutex); /* get exclusive access to the list */
+    pthread_mutex_lock(&entry_mutex); /* get exclusive access to the list */
 
     /* add the entry to the end of the list */
     if (!num_entry) { /* the entry list is empty */
@@ -532,7 +533,7 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg, pthread_mutex_t 
     num_entry++;
 
     /* unlock the mutex */
-    pthread_mutex_unlock(p_mutex);
+    pthread_mutex_unlock(&entry_mutex);
 
     return a_entry;
 }

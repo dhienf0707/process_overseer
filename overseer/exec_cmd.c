@@ -107,7 +107,6 @@ int main(int argc, char **argv) {
         union sigval _val;
         _val.sival_int = pid;
         sigqueue(getppid(), SIGUSR1, _val);
-        printf("%d %d\n", getpid(), pid);
 
         /* add int, usr1 handler */
         struct sigaction sa;
