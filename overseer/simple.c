@@ -2,13 +2,20 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <memory.h>
 
-int main(int argc, char **argv) { 
-    char *data;
-    int bytes = (1024*1024*10);
-    // data = (char *) malloc(bytes);
+#define MB 1e6
+
+int main(int argc, char **argv) {
     //signal(SIGTERM, SIG_IGN);
-    printf("Hello World. In %s seconds I will terminate with a status code 5\n", argv[1]);
+
+//    printf("%s\n", argv[2]);
+    int megs = argc >= 3 ? atoi(argv[2]) : 1;
+    char *data = (char *) malloc(megs * MB);
+    memset(data, 1, MB);
+
+    int sleep_time = argc >= 2 ? atoi(argv[1]) : 0;
+    printf("Hello World. In %d seconds I will terminate with a status code 5\n", sleep_time);
     fflush(stdout);
     sleep(1);
     printf("The list of arg: ");
@@ -16,7 +23,7 @@ int main(int argc, char **argv) {
     	printf("%s ", argv[i]);
     }
     printf("\n");
-    sleep(atoi(argv[1]));
-    printf("Finished sleeping for %s\n", argv[1]);
-    return 5; 
+    sleep(sleep_time);
+    printf("Finished sleeping for %d seconds\n", sleep_time);
+    return 5;
 }

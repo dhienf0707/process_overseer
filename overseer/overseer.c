@@ -208,6 +208,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
     printf("Server starts listening on port %u...\n", port);
+    printf("%s - totalram: %lu\n", get_time(), mem_avail());
 
     /* repeat: accept, execute, close connection */
     while (!quit) {
@@ -597,7 +598,7 @@ void send_process_info(entry_t *node, pid_t pid, int client_fd) {
     if (!send_str(client_fd, buff)) {
         fprintf(stderr, "error sending %d's info\n", pid);
     }
-//    printf("%s", buff);
+
     free(buff);
 }
 
