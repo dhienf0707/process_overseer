@@ -31,24 +31,21 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    /* time buffer */
-    char current_time[TIME_BUFFER];
-
     /* exec and termination time out */
-    struct timespec exec_timeout = {atoi(argv[1]), 0},
-            term_timeout = {atoi(argv[2]), 0};
+    struct timespec exec_timeout, term_timeout;
+    exec_timeout.tv_sec = strtol(argv[1], NULL, BASE10);
+    term_timeout.tv_sec = strtol(argv[2], NULL, BASE10);
 
     /* open logfile and outfile if exist */
     int outFile = 0, logFile = 0;
-    if (strcmp(argv[3], "")) {
+    if (strcmp(argv[3], "") != 0) {
         if ((outFile = open(argv[3], O_CREAT | O_TRUNC | O_WRONLY, 0644)) == -1) {
             perror("open outfile");
         }
     }
 
-    if (strcmp(argv[4], "")) {
-        if ((logFile = open(argv[4], O_CREAT | O_TRUNC | O_WRONLY,
-                            S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
+    if (strcmp(argv[4], "") != 0) {
+        if ((logFile = open(argv[4], O_CREAT | O_TRUNC | O_WRONLY, 0644)) == -1) {
             perror("open logfile");
         }
     }

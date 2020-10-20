@@ -3,6 +3,7 @@
 //
 
 #define _GNU_SOURCE
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -20,7 +21,6 @@
 
 #define BACKLOG 10
 #define NUM_THREADS 5
-#define MAX_ARRAY_SIZE 100
 
 /* create request struct */
 typedef struct request {
@@ -36,7 +36,7 @@ pthread_mutex_t request_mutex; /* global mutex for request pool */
 pthread_cond_t got_request; /* global condition variable for our program. */
 
 /* add request to list */
-request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var);
+request_t *add_request(cmd_t *cmd_arg);
 
 /* get 1 request from list */
 request_t *get_request();
@@ -103,6 +103,12 @@ void free_cmd(cmd_t *cmd_arg); /* free addresses for 1 request */
 
 static atomic_bool quit = ATOMIC_VAR_INIT(false); /* atomic bool variable for quitting */
 
+/**
+ * signal handler
+ * @param sig signal to be handled
+ * @param siginfo signal info
+ * @param context stack context
+ */
 void handler(int sig, siginfo_t *siginfo, void *context) {
     if (sig == SIGINT) {
         quit = true;
@@ -125,6 +131,12 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
     }
 }
 
+/**
+ * main
+ * @param argc number of passed arguments from cli
+ * @param argv passed arguments from cli
+ * @return exit success or failure
+ */
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0); /* set no buffer for stdout */
     setvbuf(stderr, NULL, _IONBF, 0); /* set no buffer for stderr */
@@ -165,7 +177,10 @@ int main(int argc, char **argv) {
     socklen_t sin_size;
 
     /* get port number to listen on */
-    port = atoi(argv[1]);
+    if (!(port = strtol(argv[1], NULL, BASE10))) {
+        fprintf(stderr, "Port must be between 1 and 65535\nUsage: overseer <port>\n");
+        exit(EXIT_FAILURE);
+    }
 
     /* set up socket */
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -175,8 +190,8 @@ int main(int argc, char **argv) {
 
     /* enable address and port reuse */
     int opt_enable = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-               &opt_enable, sizeof(opt_enable));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_enable, sizeof(opt_enable));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt_enable, sizeof(opt_enable));
 
     /* setup endpoint */
     server_addr.sin_addr.s_addr = INADDR_ANY;
@@ -196,7 +211,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
     printf("Server starts listening on port %u...\n", port);
-    //printf("%s - Total ram: %lu\n", get_time(), mem_avail());
+    printf("%s - Total ram: %lu\n", get_time(), mem_avail());
 
     /* repeat: accept, execute, close connection */
     while (!quit) {
@@ -222,7 +237,7 @@ int main(int argc, char **argv) {
 
         if (cmd_arg->type == cmd1) { // add request cmd1 to request pool
             /* add request to the linked list */
-            add_request(cmd_arg, &request_mutex, &got_request);
+            add_request(cmd_arg);
         } else if (cmd_arg->type == cmd2) { // process cmd2 and cmd3 and free afterwards
             process_cmd2(cmd_arg, client_fd);
             free_cmd(cmd_arg);
@@ -245,20 +260,26 @@ int main(int argc, char **argv) {
     exit(EXIT_SUCCESS);
 }
 
-request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
+/**
+ * add request to request pool
+ * @param cmd_arg cmd to be added to request pool
+ * @return the added request
+ */
+request_t *add_request(cmd_t *cmd_arg) {
     request_t *a_request; /* pointer to newly added request */
 
     /* create a new request */
     a_request = (request_t *) malloc(sizeof(request_t));
     if (!a_request) {
         fprintf(stderr, "add_request: out of memory\n");
+        return NULL;
     }
 
     a_request->cmd_arg = cmd_arg;
     a_request->next = NULL;
 
     /* modify the linked list of requests */
-    pthread_mutex_lock(p_mutex); /* get exclusive access to the list */
+    pthread_mutex_lock(&request_mutex); /* get exclusive access to the list */
 
     /* add the request to the end of the list */
     if (!num_request) { /* the request list is empty */
@@ -273,14 +294,18 @@ request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t 
     num_request++;
 
     /* unlock the mutex */
-    pthread_mutex_unlock(p_mutex);
+    pthread_mutex_unlock(&request_mutex);
 
     /* signal the condition variable */
-    pthread_cond_signal(p_cond_var);
+    pthread_cond_signal(&got_request);
 
     return a_request;
 }
 
+/**
+ * get request from the end of the request pool (FIFO)
+ * @return the request from the end of the request pool
+ */
 request_t *get_request() {
     request_t *a_request; /* pointer to a request */
 
@@ -304,6 +329,11 @@ request_t *get_request() {
     return a_request;
 }
 
+/**
+ * continuously handle request from the request pool
+ * @param data data passed in from pthread_create if exist
+ * @return void pointer data if exist
+ */
 void *handle_requests_loop(void *data) {
 
     request_t *a_request; /* pointer to a request */
@@ -338,6 +368,10 @@ void *handle_requests_loop(void *data) {
     }
 }
 
+/**
+ * process cmd_1 and exec the given file
+ * @param cmd_arg command argument to be processed
+ */
 void process_cmd1(cmd_t *cmd_arg) {
     int status;
     pid_t pid;
@@ -364,6 +398,8 @@ void process_cmd1(cmd_t *cmd_arg) {
                     break;
                 case t:
                     exec_timeout = cmd_arg->flag_arg[i].value;
+                    break;
+                default:
                     break;
             }
         }
@@ -392,11 +428,13 @@ void process_cmd1(cmd_t *cmd_arg) {
         }
 
         while (!quit) {
-            printf("%d\n", child_pid);
             if ((mem = process_memory(child_pid)) > 0) {
-                add_entry(child_pid, mem, cmd_arg);
+                if (!add_entry(child_pid, mem, cmd_arg)) {
+                    fprintf(stderr, "error adding entry\n");
+                };
                 sleep(1);
             }
+
             int result;
             result = waitpid(pid, &status, WNOHANG);
             if (result > 0) {
@@ -409,82 +447,121 @@ void process_cmd1(cmd_t *cmd_arg) {
     }
 }
 
+/**
+ * process the cmd2 which is mem regulation:
+ *  send entry info of all running processes to given client if no pid is passed
+ *  send entry info of specific process id to given client if pid is passed
+ * @param cmd_arg command argument to be processed
+ * @param client_fd client to send info
+ */
 void process_cmd2(cmd_t *cmd_arg, int client_fd) {
     // print_entry(entry);
     if (cmd_arg->flag_arg[0].value) {
-        pid_t mem_pid = (pid_t) atoi(cmd_arg->flag_arg[0].value);
+        pid_t mem_pid;
+        char *ptr;
+        if (!(mem_pid = strtol(cmd_arg->flag_arg[0].value, &ptr, 10))) {
+            fprintf(stderr, "invalid pid");
+            return;
+        }
         send_process_info(entry, mem_pid, client_fd);
     } else {
         char mem_time[TIME_BUFFER];
-        strcpy(mem_time, get_time());
-        int year, month, date, hour, minute, second;
-        sscanf(mem_time, "%d-%d-%d %d:%d:%d", &year, &month, &date, &hour, &minute, &second);
-        sprintf(mem_time, "%d-%d-%d %d:%d:%d", year, month, date, hour, minute, second - 1);
+        /* get current time and offset 1 second so that we can get
+         * the current running process entry while it's being added */
+        strcpy(mem_time, get_time()); /* store current time */
 
+        /* offset 1 second */
         struct tm tm_info;
         strptime(mem_time, "%Y-%m-%d %H:%M:%S", &tm_info);
+        tm_info.tm_sec -= 1;
+        mktime(&tm_info);
         strftime(mem_time, TIME_BUFFER, "%Y-%m-%d %H:%M:%S", &tm_info);
 
+        /* send the entry info of current running process */
         send_current_process(entry, mem_time, client_fd);
     }
 }
 
+/**
+ * process cmd3 (mem kill):
+ *  kill process using more than given percentage of memory
+ * @param cmd_arg command argument to be processed
+ */
 void process_cmd3(cmd_t *cmd_arg) {
     if (cmd_arg->flag_arg[0].value) {
-        char *eptr;
-        double mem_percent = strtod(cmd_arg->flag_arg[0].value, &eptr);
+        double mem_percent = strtod(cmd_arg->flag_arg[0].value, NULL);
         kill_overhead_process(entry, mem_percent);
     }
 }
 
+/**
+ * get total usable memory
+ * @return total usable memory
+ */
 unsigned long mem_avail() {
     struct sysinfo info;
 
     if (sysinfo(&info) < 0)
         return 0;
 
-    return info.freeram;
+    return info.totalram;
 }
 
-unsigned int process_memory(pid_t pid_temp) {
+/**
+ * get the total memory usage of given pid by reading through the /proc/pid/maps
+ * @param pid given pid
+ * @return total memory usage of given pid
+ */
+unsigned int process_memory(pid_t pid) {
     char buf[MAX_BUFFER];
     FILE *f;
 
     // Read the /proc/self/maps
-    sprintf(buf, "/proc/%d/maps", pid_temp);
+    sprintf(buf, "/proc/%d/maps", pid);
     f = fopen(buf, "rt");
     if (f == NULL) {
         return 0;
     }
 
-    unsigned int from[MAX_ARRAY_SIZE], to[MAX_ARRAY_SIZE], pgoff[MAX_ARRAY_SIZE], major[MAX_ARRAY_SIZE], minor[MAX_ARRAY_SIZE];
-    unsigned long ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE - 1] = 1};
-    char flags[4];
+    unsigned long int from[MAX_ARRAY_SIZE],
+            to[MAX_ARRAY_SIZE],
+            ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE - 1] = 1};
     int count = 0;
+    unsigned int total = 0;
 
     // Loop through the file line by line
     while (fgets(buf, MAX_BUFFER, f)) {
 
         // Parse data of each line
-        sscanf(buf, "%x-%x %4c %x %x:%x %lu ", from + count, to + count,
-               flags, pgoff + count, major + count, minor + count, ino + count);
-        //        printf("%s", buf);
+        char *ptr;
+        from[count] = strtoul(buf, &ptr, BASE16);
+        to[count] =  -strtoul(ptr, &ptr, BASE16);
+        ptr += INODE_OFFSET; /* shift ptr from address to inode position */
+        ino[count] = strtoul(ptr, &ptr, BASE10);
+        if (!(from[count] && to[count])) {
+            fprintf(stderr, "error reading from /proc/pid/maps\n");
+            return 0;
+        }
+
+        /* calculate total memory usage */
+        if (!ino[count]) {
+            total += to[count] - from[count];
+        }
+
         count++;
     }
 
-    // Calculate total memory for inode = 0
-    unsigned int total = 0;
-    for (int i = 0; i < MAX_ARRAY_SIZE; i++) {
-        if (ino[i] == 0) {
-            //            printf("Memory: %d Inode: %lu\n", (to[i]-from[i])/1024, ino[i]);
-            total = total + (to[i] - from[i]) / 1024;
-        }
-    }
-    //    printf("Total: %d\n", total);
     fclose(f);
     return total;
 }
 
+/**
+ * add an entry of given process to entry list
+ * @param pid given process id
+ * @param mem memory usage of process
+ * @param cmd_arg command argument
+ * @return added entry
+ */
 entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
 
     entry_t *a_entry; /* pointer to newly added entry */
@@ -493,10 +570,11 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
     a_entry = (entry_t *) malloc(sizeof(entry_t));
     if (!a_entry) {
         fprintf(stderr, "add_entry: out of memory\n");
+        return NULL;
     }
 
     a_entry->pid = pid;
-    a_entry->mem = mem * 1024; // Convert kilobytes to bytes
+    a_entry->mem = mem; // Convert kilobytes to bytes
     strcpy(a_entry->current_time, get_time());
     a_entry->argc = cmd_arg->file_size;
     a_entry->argv = cmd_arg->file_arg;
@@ -523,6 +601,10 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
     return a_entry;
 }
 
+/**
+ * get entry from the front of the list (FIFO)
+ * @return entry from the head of the linked list
+ */
 entry_t *get_entry() {
     entry_t *a_entry; /* pointer to a request */
 
@@ -546,6 +628,13 @@ entry_t *get_entry() {
     return a_entry;
 }
 
+/**
+ * send info of current running process to client, including:
+ * pid, mem usage and arguments, depends on given time
+ * @param node head of the entry
+ * @param mem_time time to query the process
+ * @param client_fd the client socket
+ */
 void send_current_process(entry_t *node, char *mem_time, int client_fd) {
     int max_buffer = (num_entry + 1) * MAX_BUFFER;
     char *buff = (char *) malloc(sizeof(char) * max_buffer);
@@ -564,10 +653,15 @@ void send_current_process(entry_t *node, char *mem_time, int client_fd) {
     if (!send_str(client_fd, buff)) {
         fprintf(stderr, "error sending current process entries\n");
     }
-//    printf("%s", buff);
     free(buff);
 }
 
+/**
+ * send entire memory usage history of given pid
+ * @param node the head of the entry
+ * @param pid given pid to query
+ * @param client_fd socket of client
+ */
 void send_process_info(entry_t *node, pid_t pid, int client_fd) {
     int max_buffer = (num_entry + 1) * MAX_BUFFER;
     char *buff = (char *) malloc(sizeof(char) * max_buffer);
@@ -586,6 +680,11 @@ void send_process_info(entry_t *node, pid_t pid, int client_fd) {
     free(buff);
 }
 
+/**
+ * kill processes using over a given percentage of total usable memory
+ * @param node head of the entry
+ * @param mem_percent memory threshold
+ */
 void kill_overhead_process(entry_t *node, double mem_percent) {
     for (; node != NULL; node = node->next) {
         double process_percent = (double) node->mem / (double) mem_avail() * 100.0;
@@ -595,6 +694,11 @@ void kill_overhead_process(entry_t *node, double mem_percent) {
     }
 }
 
+/**
+ * receive the command arguments from client
+ * @param client_fd socket of client
+ * @return the received command argument or NULL if failed
+ */
 cmd_t *recv_cmd(int client_fd) {
     /* allocate memory for the newly created command */
     cmd_t *cmd_arg = (cmd_t *) malloc(sizeof(cmd_t));
@@ -647,6 +751,14 @@ cmd_t *recv_cmd(int client_fd) {
     return cmd_arg;
 }
 
+/**
+ * receive flags from client
+ * @param client_fd client socket
+ * @param flag_arg flag argument
+ * @return
+ *  True: if successful received flag
+ *  False: if failed to receive flag
+ */
 bool recv_flag(int client_fd, flag_t *flag_arg) {
     /* receive type of flag */
     uint32_t flag_type;
@@ -676,6 +788,10 @@ bool recv_flag(int client_fd, flag_t *flag_arg) {
     return true;
 }
 
+/**
+ * free memory allocated to given command argument
+ * @param cmd_arg given command argument
+ */
 void free_cmd(cmd_t *cmd_arg) {
     /* free cmd_args elements */
     /* free file args if exist (mem and mem kill doesn't have file specified) */
@@ -700,6 +816,11 @@ void free_cmd(cmd_t *cmd_arg) {
     free(cmd_arg);
 }
 
+/**
+ * get child's pid of given pid
+ * @param pid given pid
+ * @return children's pid of given pid
+ */
 int get_child_pid(pid_t pid) {
     FILE *cmd;
     char str_pid[MAX_BUFFER];
@@ -711,7 +832,11 @@ int get_child_pid(pid_t pid) {
         perror("popen");
         return 0;
     }
-    int child_pid = atoi(fgets(str_pid, sizeof(str_pid), cmd));
+    fgets(str_pid, sizeof(str_pid), cmd);
+    int child_pid;
+    if (!(child_pid = strtol(str_pid, NULL, BASE10))) {
+        return 0;
+    }
     pclose(cmd);
     return child_pid;
 }

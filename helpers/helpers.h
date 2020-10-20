@@ -6,6 +6,10 @@
 #define PROCESS_OVERSEER_HELPERS_H
 #define TIME_BUFFER 20
 #define MAX_BUFFER 512
+#define MAX_ARRAY_SIZE 100
+#define BASE10 10
+#define BASE16 16
+#define INODE_OFFSET 21 /* offset from 'address' to 'inode' in /proc/pid/maps */
 
 #include <netinet/in.h>
 #include <z3.h>
@@ -46,7 +50,7 @@ enum usage {
 void print_usage(char *, enum usage);
 
 /* handle commandline argument */
-cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg);
+void handle_args(int argc, char **argv, cmd_t *cmd_arg);
 
 /* send string over tcp/ip */
 bool send_str(int, char *);

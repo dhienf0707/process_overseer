@@ -11,8 +11,15 @@
 #include <helpers.h>
 #include <time.h>
 
-char current_time[TIME_BUFFER];
+char current_time[TIME_BUFFER]; /* time buffer */
 
+/**
+ * print usage on error or help
+ * @param msg error message to be display
+ * @param type
+ *  if type is error: print to stderr
+ *  if type is help: print to stdout
+ */
 void print_usage(char *msg, enum usage type) {
     char *usage = "Usage: controller <address> <port> "
                   "{[-o out_file] [-log log_file] [-t seconds] <file> [arg...] | "
@@ -25,7 +32,14 @@ void print_usage(char *msg, enum usage type) {
     }
 }
 
-cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
+/**
+ * pass command argument into the cmd_t struct based on the given
+ * arguments and option flags from command line
+ * @param argc number of arguments
+ * @param argv array of arguments
+ * @param cmd_arg command argument struct
+ */
+void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     struct hostent *he; /* host entry */
     uint16_t port; /* host's port */
 
@@ -54,14 +68,14 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     cmd_arg->host_addr = *((struct in_addr *) he->h_addr);
 
     /* get the port from second argument */
-    if (!(port = atoi(argv[2]))) {
+    if (!(port = strtol(argv[2], NULL, BASE10))) {
         print_usage("Port must between 1 to 65535", error);
         exit(EXIT_FAILURE);
     }
 
     cmd_arg->port = port;
 
-    /* check if third argument is memkill or mem */
+    /* check if third argument is mem kill or mem */
     if (strcmp(argv[3], "mem") == 0) {
         /* set up mem flag's value */
         cmd_arg->type = cmd2;
@@ -73,14 +87,14 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             cmd_arg->flag_arg->value = argv[4];
         }
 
-        /* return the command */
-        if (argc < 6) return cmd_arg;
+        /* return */
+        if (argc < 6) return;
         else {
             print_usage("Too many arguments for 'mem' cmd", error);
             exit(EXIT_FAILURE);
         }
     } else if (strcmp(argv[3], "memkill") == 0) {
-        /* setup memkill flag */
+        /* setup mem kill flag */
         cmd_arg->type = cmd3;
         cmd_arg->flag_arg->type = memkill;
         cmd_arg->flag_arg->value = NULL;
@@ -93,9 +107,9 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             exit(EXIT_FAILURE);
         }
 
-        /* return the command */
+        /* return */
 
-        if (argc < 6) return cmd_arg;
+        if (argc < 6) return;
         else {
             print_usage("Too many arguments for 'memkill' cmd", error);
             exit(EXIT_FAILURE);
@@ -104,7 +118,7 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     /* When we get here we know that cmd set 2 and 3 is not set, we only consider cmd set 1 */
 
-    opterr = 0; /* disable error message for getopt in case there is argument from the executable file */
+    opterr = 0; /* disable error message for get opt in case there is argument from the executable file */
     int ch; /* character value when iterating through argv */
     bool isFlag = false; /* track if any flag in the first command group is set */
     int cmd1_args = 0; /* arguments counter for first command set to determine the position of the file */
@@ -115,17 +129,7 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     flag_t *first_arg = cmd_arg->flag_arg; /* head of flag_arg array */
 
-//    /* A copy of argv (to reserve the order of the original argv) */
-//    char *argv_cpy[argc];
-//    for (int i = 0; i < argc; i++) {
-//        argv_cpy[i] = strdup(argv[i]);
-//    }
-//
-//    for (int i = 0; i < argc; i++) {
-//        printf("%s\n", argv[i]);
-//    }
-
-    /* optstring for getopt */
+    /* option string for get opt method*/
     const char *const short_options = "o:t:";
     static struct option long_options[] = {
             {"log", required_argument, NULL, 'l'},
@@ -191,10 +195,7 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
                         print_usage("Wrong command syntax", error);
                         exit(EXIT_FAILURE);
                     }
-                } else if (oFlag && oFlag != tFlag - 2) { /* if only output flag exist */
-                    print_usage("Wrong command syntax", error);
-                    exit(EXIT_FAILURE);
-                } else if (lFlag && lFlag != tFlag - 2) { /* if only log flag exist */
+                } else if ((oFlag && oFlag != tFlag - 2) || (lFlag && lFlag != tFlag - 2)) { /* if only output flag exist */
                     print_usage("Wrong command syntax", error);
                     exit(EXIT_FAILURE);
                 }
@@ -225,21 +226,27 @@ cmd_t *handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     cmd_arg->flag_arg = first_arg;
     cmd_arg->file_size = argc - file_index;
     cmd_arg->file_arg = argv + file_index;
-
-    return cmd_arg;
 }
 
-bool send_str(int sockfd, char *msg) {
+/**
+ * send given string to given socket
+ * @param sock_fd given socket
+ * @param msg given message
+ * @return
+ *  true: if successfully sent
+ *  false: if failed
+ */
+bool send_str(int sock_fd, char *msg) {
     /* send the length of the string */
-    int msgLen = strlen(msg) + 1;
+    int msgLen = (int) strlen(msg) + 1;
     uint32_t netLen = htonl(msgLen);
-    if (send(sockfd, &netLen, sizeof(netLen), 0) == -1) {
+    if (send(sock_fd, &netLen, sizeof(netLen), 0) == -1) {
         perror("send");
         return false;
     }
 
     /* send the message */
-    if (send(sockfd, msg, msgLen, 0) != msgLen) {
+    if (send(sock_fd, msg, msgLen, 0) != msgLen) {
         fprintf(stderr, "send did not send all data\n");
         return false;
     }
@@ -247,10 +254,15 @@ bool send_str(int sockfd, char *msg) {
     return true;
 }
 
-char *recv_str(int client_fd) {
+/**
+ * receive string from given socket
+ * @param sock_fd given socket
+ * @return the string received from socket
+ */
+char *recv_str(int sock_fd) {
     /* get the length of the message*/
     uint32_t netLen;
-    if (recv(client_fd, &netLen, sizeof(netLen), 0) != sizeof(netLen)) {
+    if (recv(sock_fd, &netLen, sizeof(netLen), 0) != sizeof(netLen)) {
         fprintf(stderr, "recv got invalid len value\n");
         return NULL;
     }
@@ -258,7 +270,7 @@ char *recv_str(int client_fd) {
 
     /* get the message */
     char *msg = (char *) malloc(sizeof(char) * msgLen);
-    if (recv(client_fd, msg, msgLen, 0) != msgLen) {
+    if (recv(sock_fd, msg, msgLen, 0) != msgLen) {
         fprintf(stderr, "recv got invalid message\n");
         free(msg);
         return NULL;
@@ -267,6 +279,10 @@ char *recv_str(int client_fd) {
     return msg;
 }
 
+/**
+ * get current time
+ * @return formatted time string
+ */
 char *get_time() {
     time_t timer;
     struct tm *tm_info;
