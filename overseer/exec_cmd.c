@@ -14,8 +14,14 @@
 #include <helpers.h>
 #include <wait.h>
 
-pid_t pid;
+pid_t pid; /* pid to store the pid of the children */
 
+/**
+ * signal handler
+ * @param sig received signal
+ * @param siginfo signal info
+ * @param context stack context
+ */
 void handler(int sig, siginfo_t *siginfo, void *context) {
     if (sig == SIGINT) {
         kill(pid, SIGKILL);
@@ -28,13 +34,23 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
     }
 }
 
+/**
+ * main function
+ * @param argc number of arguments from cli
+ * @param argv array of arguments from cli
+ * @return exit successfully or failed
+ */
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
 
     /* exec and termination time out */
-    struct timespec exec_timeout, term_timeout;
-    exec_timeout.tv_sec = strtol(argv[1], NULL, BASE10);
-    term_timeout.tv_sec = strtol(argv[2], NULL, BASE10);
+    struct timespec exec_timeout = {
+            .tv_sec = strtol(argv[1], NULL, BASE10),
+            .tv_nsec = 0
+    }, term_timeout = {
+            .tv_sec = strtol(argv[2], NULL, BASE10),
+            .tv_nsec = 0
+    };
 
     /* open logfile and outfile if exist */
     int outFile = 0, logFile = 0;

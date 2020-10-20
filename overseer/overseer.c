@@ -422,6 +422,7 @@ void process_cmd1(cmd_t *cmd_arg) {
         _exit(EXIT_SUCCESS);
     } else { /* parent */
         unsigned int mem;
+        sleep(1);
         int child_pid = get_child_pid(pid);
         if (!child_pid) {
             return;
