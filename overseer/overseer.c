@@ -459,8 +459,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
     // print_entry(entry);
     if (cmd_arg->flag_arg[0].value) {
         pid_t mem_pid;
-        char *ptr;
-        if (!(mem_pid = strtol(cmd_arg->flag_arg[0].value, &ptr, 10))) {
+        if (!(mem_pid = strtol(cmd_arg->flag_arg[0].value, NULL, 10))) {
             fprintf(stderr, "invalid pid");
             return;
         }
@@ -836,6 +835,7 @@ int get_child_pid(pid_t pid) {
     fgets(str_pid, sizeof(str_pid), cmd);
     int child_pid;
     if (!(child_pid = strtol(str_pid, NULL, BASE10))) {
+        fprintf(stderr, "No child process found!\n");
         return 0;
     }
     pclose(cmd);
