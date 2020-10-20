@@ -3,7 +3,6 @@
 //
 
 #define _GNU_SOURCE
-
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -34,10 +33,10 @@ request_t *requests = NULL;     /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0;            /* number of pending requests, initially none */
 pthread_mutex_t request_mutex; /* global mutex for request pool */
-pthread_cond_t got_request; /* global condition variabe for our program. */
+pthread_cond_t got_request; /* global condition variable for our program. */
 
 /* add request to list */
-request_t *add_request(cmd_t *pCmd, pthread_mutex_t *ptr, pthread_cond_t *ptr1);
+request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var);
 
 /* get 1 request from list */
 request_t *get_request();
@@ -53,6 +52,9 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd);
 
 /* process cmd3 */
 void process_cmd3(cmd_t *cmd_arg);
+
+/* get child pid*/
+int get_child_pid(pid_t pid);
 
 /* create request struct */
 typedef struct entry {
@@ -79,7 +81,7 @@ entry_t *get_entry();
 /* add entry to list */
 entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg);
 
-/* Print all processes that are runing */
+/* Print all processes that are running */
 void send_current_process(entry_t *node, char *mem_time, int client_fd);
 
 /* Print information of a specified process */
@@ -97,20 +99,15 @@ bool recv_flag(int, flag_t *); /* receive flags from client */
 
 void handler(int, siginfo_t *, void *); /* signal handler */
 
-void free_cmd(cmd_t *a_request); /* free addresses for 1 request */
+void free_cmd(cmd_t *cmd_arg); /* free addresses for 1 request */
 
 static atomic_bool quit = ATOMIC_VAR_INIT(false); /* atomic bool variable for quitting */
-
-sigset_t set; /* set of signals to be blocked (and waiting on) */
 
 void handler(int sig, siginfo_t *siginfo, void *context) {
     if (sig == SIGINT) {
         quit = true;
         printf("%s - received SIGINT\n", get_time());
         printf("%s - Cleaning up and terminating\n", get_time());
-
-        //printf("SIGINT: Parent: %d Child:%d CoC: %d\n", getpid(), pid, pid + 1);
-        //        kill(getpid(), SIGKILL);
         sleep(1);
         pthread_cond_broadcast(&got_request);
 
@@ -139,20 +136,12 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    /* occur when interrupt signal is sent (Ctrl + C)
-     * Note: sigaction is preferred here since it would not trigger SA_RESTART
-     * which will restart the accept function and won't let the program quit */
     struct sigaction sa;
     sa.sa_flags = SA_SIGINFO;
     sigemptyset(&sa.sa_mask);
     sa.sa_sigaction = &handler;
     sigaction(SIGINT, &sa, NULL);
 
-    /* block the sigusr1 signal for all threads which will be consumed by sigwaitinfo later
-     * to get the pid of the grandchild (and avoid interrupting when signal is sent) */
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-    pthread_sigmask(SIG_BLOCK, &set, NULL);
 
     /* start threads */
     pthread_t p_threads[NUM_THREADS]; /* threads */
@@ -168,7 +157,6 @@ int main(int argc, char **argv) {
         pthread_create(&p_threads[i], NULL, (void *(*)(void *)) handle_requests_loop, NULL);
     }
 
-    //    pthread_sigmask(SIG_UNBLOCK, &set, NULL);
 
     /* setup networking */
     int server_fd, client_fd;
@@ -208,7 +196,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
     printf("Server starts listening on port %u...\n", port);
-    printf("%s - totalram: %lu\n", get_time(), mem_avail());
+    //printf("%s - Total ram: %lu\n", get_time(), mem_avail());
 
     /* repeat: accept, execute, close connection */
     while (!quit) {
@@ -216,7 +204,7 @@ int main(int argc, char **argv) {
 
         /* accept connection */
         if ((client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &sin_size)) == -1) {
-            if (errno = EINTR) {
+            if (errno == EINTR) {
                 continue;
             } else {
                 perror("accept");
@@ -258,7 +246,6 @@ int main(int argc, char **argv) {
 }
 
 request_t *add_request(cmd_t *cmd_arg, pthread_mutex_t *p_mutex, pthread_cond_t *p_cond_var) {
-    //TODO
     request_t *a_request; /* pointer to newly added request */
 
     /* create a new request */
@@ -318,7 +305,7 @@ request_t *get_request() {
 }
 
 void *handle_requests_loop(void *data) {
-    //TODO
+
     request_t *a_request; /* pointer to a request */
 
     /* do forever... */
@@ -398,19 +385,16 @@ void process_cmd1(cmd_t *cmd_arg) {
 
         _exit(EXIT_SUCCESS);
     } else { /* parent */
-        /* wait for the signal from the grandchild to get the grandchild pid */
-        siginfo_t siginfo;
-        if (sigwaitinfo(&set, &siginfo) == -1) {
-            perror("sigwaitinfo");
+        unsigned int mem;
+        int child_pid = get_child_pid(pid);
+        if (!child_pid) {
             return;
         }
 
-        int child_pid = siginfo.si_value.sival_int;
-        unsigned int mem;
         while (!quit) {
+            printf("%d\n", child_pid);
             if ((mem = process_memory(child_pid)) > 0) {
                 add_entry(child_pid, mem, cmd_arg);
-                // print_entry(entry);
                 sleep(1);
             }
             int result;
@@ -694,7 +678,7 @@ bool recv_flag(int client_fd, flag_t *flag_arg) {
 
 void free_cmd(cmd_t *cmd_arg) {
     /* free cmd_args elements */
-    /* free file args if exist (mem and memkill doesn't have file specified) */
+    /* free file args if exist (mem and mem kill doesn't have file specified) */
     if (cmd_arg->file_arg) {
         for (int i = 0; i < cmd_arg->file_size; i++) {
             free(cmd_arg->file_arg[i]);
@@ -714,4 +698,20 @@ void free_cmd(cmd_t *cmd_arg) {
 
     /* free cmd_arg */
     free(cmd_arg);
+}
+
+int get_child_pid(pid_t pid) {
+    FILE *cmd;
+    char str_pid[MAX_BUFFER];
+    char command[MAX_BUFFER];
+
+    sprintf(command, "pgrep -P %d", pid);
+    cmd = popen(command, "r");
+    if (cmd == NULL) {
+        perror("popen");
+        return 0;
+    }
+    int child_pid = atoi(fgets(str_pid, sizeof(str_pid), cmd));
+    pclose(cmd);
+    return child_pid;
 }

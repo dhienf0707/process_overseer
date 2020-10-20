@@ -1,0 +1,1 @@
+/usr/bin/cc    CMakeFiles/controller.dir/controller.c.o  -o controller  ../helpers/libhelpers.a 

@@ -103,10 +103,6 @@ int main(int argc, char **argv) {
         /* send error code if exec failed */
         _exit(errno);
     } else { /* parent */
-        /* send to the topmost parent the pid of the grandchild */
-        union sigval _val;
-        _val.sival_int = pid;
-        sigqueue(getppid(), SIGUSR1, _val);
 
         /* add int, usr1 handler */
         struct sigaction sa;

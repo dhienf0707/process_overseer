@@ -99,35 +99,57 @@ void *exec_hello(void *data) {
 
 #define MAX_ARRAY_SIZE 100
 
-int main() {
+//int main() {
+//
+//    char buf[512];
+//    FILE *f;
+//    sprintf(buf, "/proc/%d/maps", 2074);
+//    f = fopen(buf, "rt");
+//    unsigned int from[MAX_ARRAY_SIZE], to[MAX_ARRAY_SIZE], pgoff[MAX_ARRAY_SIZE], major[MAX_ARRAY_SIZE], minor[MAX_ARRAY_SIZE];
+//    unsigned long ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE-1] = 1};
+//    char flags[MAX_ARRAY_SIZE][4];
+//    int count = 0;
+//    while (fgets(buf, 512, f)) {
+//
+//
+//        sscanf(buf, "%x-%x %4c %x %x:%x %lu ", from + count, to + count,
+//               flags + count, pgoff + count, major + count, minor + 1, ino + count);
+//        printf("%s", buf);
+//        count++;
+//    }
+//    unsigned int total = 0;
+//    for (int i = 0; i < MAX_ARRAY_SIZE; i++){
+//        if (ino[i] == 0) {
+//           printf("Memory: %d Inode: %lu\n", (to[i]-from[i])/1024, ino[i]);
+//            total = total + (to[i]-from[i])/1024;
+//        }
+//    }
+////    printf("Total: %d\n", total);
+//
+//    return 1;
+//
+//
+//
+//}
 
-    char buf[512];
-    FILE *f;
-    sprintf(buf, "/proc/%d/maps", 2074);
-    f = fopen(buf, "rt");
-    unsigned int from[MAX_ARRAY_SIZE], to[MAX_ARRAY_SIZE], pgoff[MAX_ARRAY_SIZE], major[MAX_ARRAY_SIZE], minor[MAX_ARRAY_SIZE];
-    unsigned long ino[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE-1] = 1};
-    char flags[MAX_ARRAY_SIZE][4];
-    int count = 0;
-    while (fgets(buf, 512, f)) {
+
+#include <string.h>
+int main(){
+
+    FILE *cmd;
+    char result[1024];
 
 
-        sscanf(buf, "%x-%x %4c %x %x:%x %lu ", from + count, to + count,
-               flags + count, pgoff + count, major + count, minor + 1, ino + count);
-        printf("%s", buf);
-        count++;
+    cmd = popen("pgrep -P 1440", "r");
+    if (cmd == NULL) {
+        perror("popen");
+        exit(EXIT_FAILURE);
     }
-    unsigned int total = 0;
-    for (int i = 0; i < MAX_ARRAY_SIZE; i++){
-        if (ino[i] == 0) {
-           printf("Memory: %d Inode: %lu\n", (to[i]-from[i])/1024, ino[i]);
-            total = total + (to[i]-from[i])/1024;
-        }
-    }
-//    printf("Total: %d\n", total);
-
-    return 1;
-
-
+    int d;
+    fgets(result, sizeof(result), cmd);
+    d = atoi(result);
+    printf("AlO%d", d);
+    pclose(cmd);
+    return 0;
 
 }
