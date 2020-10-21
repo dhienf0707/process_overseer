@@ -7,6 +7,7 @@
 #define TIME_BUFFER 20
 #define MAX_BUFFER 256
 #define MAX_ARRAY_SIZE 100
+#define MAX_FLAG_SIZE 3
 #define BASE10 10
 #define BASE16 16
 #define INODE_OFFSET 21 /* offset from 'address' to 'inode' in /proc/pid/maps */
@@ -16,7 +17,7 @@
 
 /* enum for option flag type */
 enum flag_type {
-    o, log, t, mem, memkill
+    o = 1, log, t, mem, memkill
 };
 
 /* create struct for flags */
@@ -27,7 +28,7 @@ typedef struct flag {
 
 /* enum for command type */
 enum cmd_type {
-    cmd1, cmd2, cmd3
+    cmd1 = 1, cmd2, cmd3
 };
 
 /* struct for command group argument */
@@ -43,7 +44,7 @@ typedef struct cmd {
 
 /* enum for print usage (err vs help) */
 enum usage {
-    help, error
+    help = 1, error
 };
 
 /* print usage if error or help from cli argument */

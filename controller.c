@@ -25,10 +25,12 @@ void send_flag(int, flag_t);
 int main(int argc, char **argv) {
     int sock_fd; /* socket file descriptor */
     struct sockaddr_in serverAddr; /* server address's information */
-    flag_t flag_arg[3] = {[0 ... 2] = {
-            .value = (char [MAX_BUFFER]) {},
-            .type = 0,
-    }};
+    flag_t flag_arg[MAX_FLAG_SIZE];
+    char buff[MAX_FLAG_SIZE][MAX_BUFFER] = {[0 ... MAX_FLAG_SIZE - 1] = "\0"};
+    for (int i = 0; i < MAX_FLAG_SIZE; i++) {
+        flag_arg[i].type = 0;
+        flag_arg[i].value = buff[i];
+    }
 
     cmd_t cmd_arg = {
         .flag_size =  0,
@@ -136,7 +138,7 @@ void send_flag(int sock_fd, flag_t flag_arg) {
 
     /* send value */
     /* send if value argument exist (in case of optional argument) */
-    uint16_t value_exist = flag_arg.value ? 1 : 0;
+    uint16_t value_exist = flag_arg.value[0] ? 1 : 0;
     uint16_t netLen = htons(value_exist);
     if (send(sock_fd, &netLen, sizeof(netLen), 0) == -1) {
         perror("send");
