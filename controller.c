@@ -60,7 +60,10 @@ int main(int argc, char **argv) {
 
     /* receive the response if cmd type is 2 */
     if (cmd_arg.type == cmd2) {
-        char *ret = recv_str(sock_fd);
+        char *ret;
+        if (!(ret = recv_str(sock_fd))) {
+            exit(EXIT_FAILURE);
+        }
         printf("%s", ret);
         free(ret);
     }
