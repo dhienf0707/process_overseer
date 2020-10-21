@@ -44,7 +44,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     uint16_t port; /* host's port */
 
     /* if not help there must be at least 4 arguments */
-    if (argc < 4) {
+    if (argc < 2) {
         print_usage("Too few arguments", error);
         exit(EXIT_FAILURE);
     }
@@ -58,6 +58,10 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             print_usage("Too many arguments for 'help' cmd", error);
             exit(EXIT_FAILURE);
         }
+    }
+    if (argc < 4) {
+        print_usage("Too few arguments", error);
+        exit(EXIT_FAILURE);
     }
 
     /* get the address */
