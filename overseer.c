@@ -474,7 +474,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
         strcpy(mem_time, get_time()); /* store current time */
 
         /* offset 1 second */
-        struct tm tm_info;
+        struct tm tm_info = {0};
         strptime(mem_time, "%Y-%m-%d %H:%M:%S", &tm_info);
         tm_info.tm_sec -= 1;
         mktime(&tm_info);

@@ -42,7 +42,8 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
  * @return exit successfully or failed
  */
 int main(int argc, char **argv) {
-    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0); /* set no buffer for stdout */
+    setvbuf(stderr, NULL, _IONBF, 0); /* set no buffer for stderr */
 
     /* exec and termination time out */
     struct timespec exec_timeout = {

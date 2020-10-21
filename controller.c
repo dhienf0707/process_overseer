@@ -25,19 +25,24 @@ void send_flag(int, flag_t);
 int main(int argc, char **argv) {
     int sock_fd; /* socket file descriptor */
     struct sockaddr_in serverAddr; /* server address's information */
+
+    /* set up command arguments */
+    /* initialize flag_t struct */
     flag_t flag_arg[MAX_FLAG_SIZE];
     char buff[MAX_FLAG_SIZE][MAX_BUFFER] = {[0 ... MAX_FLAG_SIZE - 1] = "\0"};
     for (int i = 0; i < MAX_FLAG_SIZE; i++) {
         flag_arg[i].type = 0;
         flag_arg[i].value = buff[i];
     }
-
+    /* initialize cmd_t struct */
     cmd_t cmd_arg = {
+        .type = 0,
         .flag_size =  0,
         .flag_arg =  flag_arg,
         .file_size =  0,
-        .file_arg =  NULL
-    }; /* store arguments and options */
+        .file_arg =  NULL,
+        .port = 0,
+    };
 
     /* handle the arguments */
     handle_args(argc, argv, &cmd_arg);
