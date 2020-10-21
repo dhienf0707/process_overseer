@@ -56,7 +56,7 @@ void process_cmd3(cmd_t *cmd_arg);
 /* get child pid*/
 int get_child_pid(pid_t pid);
 
-/* create request struct */
+/* entry  struct */
 typedef struct entry {
     pid_t pid;
     char current_time[TIME_BUFFER];
@@ -835,7 +835,13 @@ int get_child_pid(pid_t pid) {
         perror("popen");
         return 0;
     }
-    fgets(str_pid, sizeof(str_pid), cmd);
+
+    if (!fgets(str_pid, sizeof(str_pid), cmd)) {
+        pclose(cmd);
+        return 0;
+    }
+
+
     int child_pid;
     if (!(child_pid = strtol(str_pid, NULL, BASE10))) {
         pclose(cmd);

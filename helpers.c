@@ -64,13 +64,6 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
         print_usage("Too few arguments", error);
         exit(EXIT_FAILURE);
     }
-    /* we need to make a copy of argv in case the original argv changed order after get opttion flag */
-    char buff[argc][MAX_BUFFER];
-    char *argv_cpy[argc];
-    for (int i = 0; i < argc; i++) {
-        strcpy(buff[i], argv[i]);
-        argv_cpy[i] = buff[i];
-    }
 
     /* get the address */
     if ((he = gethostbyname(argv[1])) == NULL) {
@@ -92,11 +85,10 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
         /* set up mem flag's value */
         cmd_arg->type = cmd2;
         cmd_arg->flag_arg->type = mem;
-        cmd_arg->flag_arg->value = NULL;
         cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the optional argument */
-            cmd_arg->flag_arg->value = argv[4];
+            strcpy(cmd_arg->flag_arg->value, argv[4]);
         }
 
         /* return */
@@ -109,11 +101,10 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
         /* setup mem kill flag */
         cmd_arg->type = cmd3;
         cmd_arg->flag_arg->type = memkill;
-        cmd_arg->flag_arg->value = NULL;
         cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the required argument */
-            cmd_arg->flag_arg->value = argv[4];
+            strcpy(cmd_arg->flag_arg->value, argv[4]);
         } else {
             print_usage("Please specify percentage for memkill", error);
             exit(EXIT_FAILURE);
@@ -130,6 +121,14 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     /* When we get here we know that cmd set 2 and 3 is not set, we only consider cmd set 1 */
 
+    /* we need to make a copy of argv in case the original argv changed order after get opttion flag */
+    char buff[argc][MAX_BUFFER];
+    char *argv_cpy[argc];
+    for (int i = 0; i < argc; i++) {
+        strcpy(buff[i], argv[i]);
+        argv_cpy[i] = buff[i];
+    }
+
     opterr = 0; /* disable error message for get opt in case there is argument from the executable file */
     int ch; /* character value when iterating through argv */
     bool isFlag = false; /* track if any flag in the first command group is set */
@@ -141,7 +140,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     flag_t *first_arg = cmd_arg->flag_arg; /* head of flag_arg array */
 
-    /* option string for get opt method*/
+    /* option string for get opt method */
     const char *const short_options = "o:t:";
     static struct option long_options[] = {
             {"log", required_argument, NULL, 'l'},
@@ -153,7 +152,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             case 'o':
                 /* create flag for output */
                 cmd_arg->flag_arg->type = o;
-                cmd_arg->flag_arg->value = optarg;
+                strcpy(cmd_arg->flag_arg->value, optarg);
                 cmd_arg->flag_arg++;
                 cmd_arg->flag_size++;
 
@@ -171,7 +170,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             case 'l':
                 /* create flag for log */
                 cmd_arg->flag_arg->type = log;
-                cmd_arg->flag_arg->value = optarg;
+                strcpy(cmd_arg->flag_arg->value, optarg);
                 cmd_arg->flag_arg++;
                 cmd_arg->flag_size++;
 
@@ -193,7 +192,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             case 't':
                 /* create flag for time */
                 cmd_arg->flag_arg->type = t;
-                cmd_arg->flag_arg->value = optarg;
+                strcpy(cmd_arg->flag_arg->value, optarg);
                 cmd_arg->flag_arg++;
                 cmd_arg->flag_size++;
 
