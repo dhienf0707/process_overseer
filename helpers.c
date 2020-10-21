@@ -43,6 +43,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     struct hostent *he; /* host entry */
     uint16_t port; /* host's port */
 
+    
     /* if not help there must be at least 4 arguments */
     if (argc < 2) {
         print_usage("Too few arguments", error);
@@ -62,6 +63,13 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     if (argc < 4) {
         print_usage("Too few arguments", error);
         exit(EXIT_FAILURE);
+    }
+    /* we need to make a copy of argv in case the original argv changed order after get opttion flag */
+    char buff[argc][MAX_BUFFER];
+    char *argv_cpy[argc];
+    for (int i = 0; i < argc; i++) {
+        strcpy(buff[i], argv[i]);
+        argv_cpy[i] = buff[i];
     }
 
     /* get the address */
@@ -140,7 +148,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             {NULL, 0,                  NULL, 0}
     };
 
-    while ((ch = getopt_long_only(argc, argv, short_options, long_options, NULL)) != -1) {
+    while ((ch = getopt_long_only(argc, argv_cpy, short_options, long_options, NULL)) != -1) {
         switch (ch) {
             case 'o':
                 /* create flag for output */
