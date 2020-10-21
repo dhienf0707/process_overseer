@@ -33,7 +33,16 @@ request_t *requests = NULL;     /* head of linked list of requests */
 request_t *last_request = NULL; /* pointer to the last request */
 int num_request = 0;            /* number of pending requests, initially none */
 pthread_mutex_t request_mutex; /* global mutex for request pool */
-pthread_cond_t got_request; /* global condition variable for our program. */
+pthread_cond_t got_request; /* global condition variable for got request. */
+pthread_mutex_t command_mutex; /* global mutex for command argument's index */
+pthread_cond_t empty_request; /* global condition variable for empty space for command argument array */
+
+/* command arguments array and its index */
+int i = 0;
+cmd_t cmd_args[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE - 1] = {
+        .flag_size = 0,
+        .file_size = 0,
+}};
 
 /* add request to list */
 request_t *add_request(cmd_t *cmd_arg);
@@ -116,6 +125,7 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
         printf("%s - Cleaning up and terminating\n", get_time());
         sleep(1);
         pthread_cond_broadcast(&got_request);
+        pthread_cond_broadcast(&empty_request);
 
         /* free memory left if exist */
         request_t *a_request;
@@ -161,8 +171,9 @@ int main(int argc, char **argv) {
     /* initialize the mutex and condition variable */
     pthread_mutex_init(&request_mutex, NULL);
     pthread_cond_init(&got_request, NULL);
-
+    pthread_cond_init(&empty_request, NULL);
     pthread_mutex_init(&entry_mutex, NULL);
+    pthread_mutex_init(&command_mutex, NULL);
 
     /* create the request-handling threads */
     for (int i = 0; i < NUM_THREADS; i++) {
@@ -214,11 +225,6 @@ int main(int argc, char **argv) {
     printf("%s - Total ram: %lu\n", get_time(), mem_avail());
 
     /* repeat: accept, execute, close connection */
-    cmd_t cmd_args[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE - 1] = {
-            .flag_size = 0,
-            .file_size = 0,
-    }};
-    int i = 0;
     cmd_t *cmd_arg = cmd_args + i;
     while (!quit) {
         sin_size = sizeof(struct sockaddr_in);
@@ -244,6 +250,22 @@ int main(int argc, char **argv) {
         if (cmd_arg->type == cmd1) { // add request cmd1 to request pool
             /* add request to the linked list */
             add_request(cmd_arg);
+
+            /* lock the mutex to access the request list and index i exclusively */
+            pthread_mutex_lock(&command_mutex);
+
+            /* only receive connection when there's space for command argument*/
+            if (i >= MAX_ARRAY_SIZE - 1) {
+                printf("NO MEMORY AVAILABLE, PLEASE WAIT FOR CHILD TO TERMINATE!!!\n");
+                pthread_cond_wait(&empty_request, &command_mutex);
+            }
+
+            /* increment the index of the command argument array */
+            i++;
+
+            /* unlock mutex for other thread to access request pool */
+            pthread_mutex_unlock(&command_mutex);
+
         } else if (cmd_arg->type == cmd2) { // process cmd2 and cmd3 and free afterwards
             process_cmd2(cmd_arg, client_fd);
         } else {
@@ -254,17 +276,7 @@ int main(int argc, char **argv) {
         close(client_fd);
 
         /* increment the cmd_argument array */
-        i = (i + 1) % MAX_ARRAY_SIZE;
         cmd_arg = cmd_args + i;
-
-        if (i == 0) {
-            /* memory for cmd_arg pool full*/
-            fprintf(stderr, "Memory full - refreshing memory...\n");
-            /* kill all processes */
-            for (entry_t *node = entry; node != NULL; node = node->next) {
-                kill(node->pid, SIGKILL);
-            }
-        }
     }
     close(server_fd);
 
@@ -310,11 +322,11 @@ request_t *add_request(cmd_t *cmd_arg) {
     /* increase the total of pending requests */
     num_request++;
 
+    /* signal the got request conditional variable for thread to consume  */
+    pthread_cond_signal(&got_request);
+
     /* unlock the mutex */
     pthread_mutex_unlock(&request_mutex);
-
-    /* signal the condition variable */
-    pthread_cond_signal(&got_request);
 
     return a_request;
 }
@@ -464,6 +476,23 @@ void process_cmd1(cmd_t *cmd_arg) {
                 break;
             }
         }
+
+        /* we need to decrement the index of command argument array and
+         * signal the main thread to continue processing incoming request
+         * from client after the process terminated */
+
+        /* lock the mutex */
+        pthread_mutex_lock(&command_mutex);
+
+        /* decrement the index of the command argument array */
+        i--;
+
+        /* signal the empty_request cond_var for main thread to continue */
+        pthread_cond_signal(&empty_request);
+
+        /* unlock mutex */
+        pthread_mutex_unlock(&command_mutex);
+
     }
 }
 

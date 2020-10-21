@@ -7,6 +7,7 @@
 #define TIME_BUFFER 20
 #define MAX_BUFFER 256
 #define MAX_ARRAY_SIZE 100
+#define MAX_FLAG_SIZE 3
 #define BASE10 10
 #define BASE16 16
 #define INODE_OFFSET 21 /* offset from 'address' to 'inode' in /proc/pid/maps */
@@ -36,7 +37,7 @@ typedef struct cmd {
     uint16_t port;
     struct in_addr host_addr;
     int flag_size;
-    flag_t flag_arg[MAX_ARRAY_SIZE];
+    flag_t flag_arg[MAX_FLAG_SIZE];
     int file_size;
     char file_arg[MAX_ARRAY_SIZE][MAX_BUFFER];
 } cmd_t;
