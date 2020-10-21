@@ -42,6 +42,7 @@ void print_usage(char *msg, enum usage type) {
 void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     struct hostent *he; /* host entry */
     uint16_t port; /* host's port */
+    flag_t *flag_arg = cmd_arg->flag_arg; /* head of flag_arg array */
 
     /* if there is only 2 argument and it's --help */
     if (strcmp(argv[1], "--help") == 0) {
@@ -79,12 +80,12 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     if (strcmp(argv[3], "mem") == 0) {
         /* set up mem flag's value */
         cmd_arg->type = cmd2;
-        cmd_arg->flag_arg->type = mem;
-        cmd_arg->flag_arg->value = NULL;
+        flag_arg->type = mem;
+        flag_arg->value[0] = 0;
         cmd_arg->flag_size++;
 
-        if (argv[4]) { /* get the optional argument */
-            cmd_arg->flag_arg->value = argv[4];
+        if (argc > 4) { /* get the optional argument */
+            strcpy(flag_arg->value, argv[4]);
         }
 
         /* return */
@@ -96,12 +97,11 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     } else if (strcmp(argv[3], "memkill") == 0) {
         /* setup mem kill flag */
         cmd_arg->type = cmd3;
-        cmd_arg->flag_arg->type = memkill;
-        cmd_arg->flag_arg->value = NULL;
+        flag_arg->type = memkill;
         cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the required argument */
-            cmd_arg->flag_arg->value = argv[4];
+            strcpy(flag_arg->value, argv[4]);
         } else {
             print_usage("Please specify percentage for memkill", error);
             exit(EXIT_FAILURE);
@@ -118,6 +118,14 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     /* When we get here we know that cmd set 2 and 3 is not set, we only consider cmd set 1 */
 
+    /* we need to make a copy of argv in case the original argv changed order after get opttion flag */
+    char buff[argc][MAX_BUFFER];
+    char *argv_cpy[argc];
+    for (int i = 0; i < argc; i++) {
+        strcpy(buff[i], argv[i]);
+        argv_cpy[i] = buff[i];
+    }
+
     opterr = 0; /* disable error message for get opt in case there is argument from the executable file */
     int ch; /* character value when iterating through argv */
     bool isFlag = false; /* track if any flag in the first command group is set */
@@ -127,7 +135,6 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     /* Executable file pointer */
     cmd_arg->file_size = 0;
 
-    flag_t *first_arg = cmd_arg->flag_arg; /* head of flag_arg array */
 
     /* option string for get opt method*/
     const char *const short_options = "o:t:";
@@ -136,13 +143,13 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             {NULL, 0,                  NULL, 0}
     };
 
-    while ((ch = getopt_long_only(argc, argv, short_options, long_options, NULL)) != -1) {
+    while ((ch = getopt_long_only(argc, argv_cpy, short_options, long_options, NULL)) != -1) {
         switch (ch) {
             case 'o':
                 /* create flag for output */
-                cmd_arg->flag_arg->type = o;
-                cmd_arg->flag_arg->value = optarg;
-                cmd_arg->flag_arg++;
+                flag_arg->type = o;
+                strcpy(flag_arg->value, optarg);
+                flag_arg++;
                 cmd_arg->flag_size++;
 
                 isFlag = true; /* set the command set 1 to true */
@@ -158,9 +165,9 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
                 break;
             case 'l':
                 /* create flag for log */
-                cmd_arg->flag_arg->type = log;
-                cmd_arg->flag_arg->value = optarg;
-                cmd_arg->flag_arg++;
+                flag_arg->type = log;
+                strcpy(flag_arg->value, optarg);
+                flag_arg++;
                 cmd_arg->flag_size++;
 
                 isFlag = true; /* set command set 1 to true */
@@ -180,9 +187,9 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
                 break;
             case 't':
                 /* create flag for time */
-                cmd_arg->flag_arg->type = t;
-                cmd_arg->flag_arg->value = optarg;
-                cmd_arg->flag_arg++;
+                flag_arg->type = t;
+                strcpy(flag_arg->value, optarg);
+                flag_arg++;
                 cmd_arg->flag_size++;
 
                 isFlag = true; /* set the first command set to true */
@@ -208,6 +215,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     /* index of file arguments after retrieving all of the arguments */
     int file_index = cmd1_args + 3;
+    int file_size = argc - file_index;
 
     /* if cmd 1 is set, flags must be in right position */
     if (isFlag && oFlag != 4 && lFlag != 4 && tFlag != 4) {
@@ -223,9 +231,15 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     /* set up first command group and return */
     cmd_arg->type = cmd1;
-    cmd_arg->flag_arg = first_arg;
-    cmd_arg->file_size = argc - file_index;
-    cmd_arg->file_arg = argv + file_index;
+    cmd_arg->file_size = file_size;
+//    char file_arg[file_size][MAX_BUFFER];
+//    cmd_arg->file_arg = file_arg;
+    argv += file_index;
+    for (int i = 0; i < file_size; i++) {
+        strcpy(cmd_arg->file_arg[i], argv[i]);
+    }
+//    memcpy(cmd_arg, argv + file_index, file_size);
+//    cmd_arg->file_arg = argv + file_index;
 }
 
 /**
@@ -259,24 +273,22 @@ bool send_str(int sock_fd, char *msg) {
  * @param sock_fd given socket
  * @return the string received from socket
  */
-char *recv_str(int sock_fd) {
+bool recv_str(int sock_fd, char *msg) {
     /* get the length of the message*/
     uint32_t netLen;
     if (recv(sock_fd, &netLen, sizeof(netLen), 0) != sizeof(netLen)) {
         fprintf(stderr, "recv got invalid len value\n");
-        return NULL;
+        return false;
     }
     int msgLen = ntohl(netLen);
 
     /* get the message */
-    char *msg = (char *) malloc(sizeof(char) * msgLen);
     if (recv(sock_fd, msg, msgLen, 0) != msgLen) {
         fprintf(stderr, "recv got invalid message\n");
-        free(msg);
-        return NULL;
+        return false;
     }
 
-    return msg;
+    return true;
 }
 
 /**

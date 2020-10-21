@@ -62,7 +62,7 @@ typedef struct entry {
     char current_time[TIME_BUFFER];
     unsigned int mem;
     int argc;
-    char **argv;
+    char argv[MAX_ARRAY_SIZE][MAX_BUFFER];
     struct entry *next;
 } entry_t;
 
@@ -93,7 +93,7 @@ void kill_overhead_process(entry_t *, double);
 /* Calculate total memory of a process */
 unsigned int process_memory(pid_t);
 
-cmd_t *recv_cmd(int); /* receive commands from clients */
+bool recv_cmd(int client_fd, cmd_t *cmd_arg); /* receive commands from clients */
 
 bool recv_flag(int, flag_t *); /* receive flags from client */
 
@@ -120,12 +120,12 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
         /* free memory left if exist */
         request_t *a_request;
         while ((a_request = get_request())) {
-            free_cmd(a_request->cmd_arg);
             free(a_request);
         }
 
         entry_t *a_entry;
         while ((a_entry = get_entry())) {
+            kill(a_entry->pid, SIGKILL);
             free(a_entry);
         }
     }
@@ -138,9 +138,9 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
  * @return exit success or failure
  */
 int main(int argc, char **argv) {
+    setpgid(0, 0); /* put process in its own process group */
     setvbuf(stdout, NULL, _IONBF, 0); /* set no buffer for stdout */
     setvbuf(stderr, NULL, _IONBF, 0); /* set no buffer for stderr */
-    cmd_t *cmd_arg; /* command group's information */
 
     /* check for arguments */
     if (argc != 2) {
@@ -214,6 +214,12 @@ int main(int argc, char **argv) {
     printf("%s - Total ram: %lu\n", get_time(), mem_avail());
 
     /* repeat: accept, execute, close connection */
+    cmd_t cmd_args[MAX_ARRAY_SIZE] = {[0 ... MAX_ARRAY_SIZE - 1] = {
+            .flag_size = 0,
+            .file_size = 0,
+    }};
+    int i = 0;
+    cmd_t *cmd_arg = cmd_args + i;
     while (!quit) {
         sin_size = sizeof(struct sockaddr_in);
 
@@ -230,7 +236,7 @@ int main(int argc, char **argv) {
         printf("%s - connection received from %s\n", get_time(), inet_ntoa(client_addr.sin_addr));
 
         /* receive command from client */
-        if (!(cmd_arg = recv_cmd(client_fd))) {
+        if (!recv_cmd(client_fd, cmd_arg)) {
             close(client_fd);
             continue;
         }
@@ -240,14 +246,25 @@ int main(int argc, char **argv) {
             add_request(cmd_arg);
         } else if (cmd_arg->type == cmd2) { // process cmd2 and cmd3 and free afterwards
             process_cmd2(cmd_arg, client_fd);
-            free_cmd(cmd_arg);
         } else {
             process_cmd3(cmd_arg);
-            free_cmd(cmd_arg);
         }
 
         /* close connection */
         close(client_fd);
+
+        /* increment the cmd_argument array */
+        i = (i + 1) % MAX_ARRAY_SIZE;
+        cmd_arg = cmd_args + i;
+
+        if (i == 0) {
+            /* memory for cmd_arg pool full*/
+            fprintf(stderr, "Memory full - refreshing memory...\n");
+            /* kill all processes */
+            for (entry_t *node = entry; node != NULL; node = node->next) {
+                kill(node->pid, SIGKILL);
+            }
+        }
     }
     close(server_fd);
 
@@ -362,7 +379,6 @@ void *handle_requests_loop(void *data) {
             process_cmd1(a_request->cmd_arg);
 
             /* free request and its resources */
-            free_cmd(a_request->cmd_arg);
             free(a_request);
         }
     }
@@ -432,8 +448,11 @@ void process_cmd1(cmd_t *cmd_arg) {
             if ((mem = process_memory(child_pid)) > 0) {
                 if (!add_entry(child_pid, mem, cmd_arg)) {
                     fprintf(stderr, "error adding entry\n");
-                };
+                    break;
+                }
                 sleep(1);
+            } else {
+                break;
             }
 
             int result;
@@ -457,7 +476,7 @@ void process_cmd1(cmd_t *cmd_arg) {
  */
 void process_cmd2(cmd_t *cmd_arg, int client_fd) {
     // print_entry(entry);
-    if (cmd_arg->flag_arg[0].value) {
+    if (cmd_arg->flag_arg[0].value[0]) {
         pid_t mem_pid;
         if (!(mem_pid = strtol(cmd_arg->flag_arg[0].value, NULL, 10))) {
             fprintf(stderr, "invalid pid");
@@ -535,7 +554,7 @@ unsigned int process_memory(pid_t pid) {
         // Parse data of each line
         char *ptr;
         from[count] = strtoul(buf, &ptr, BASE16);
-        to[count] =  -strtoul(ptr, &ptr, BASE16);
+        to[count] = -strtoul(ptr, &ptr, BASE16);
         ptr += INODE_OFFSET; /* shift ptr from address to inode position */
         ino[count] = strtoul(ptr, &ptr, BASE10);
         if (!(from[count] && to[count])) {
@@ -563,7 +582,6 @@ unsigned int process_memory(pid_t pid) {
  * @return added entry
  */
 entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
-
     entry_t *a_entry; /* pointer to newly added entry */
 
     /* create a new request */
@@ -575,10 +593,13 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
 
     a_entry->pid = pid;
     a_entry->mem = mem; // Convert kilobytes to bytes
-    strcpy(a_entry->current_time, get_time());
     a_entry->argc = cmd_arg->file_size;
-    a_entry->argv = cmd_arg->file_arg;
+    strcpy(a_entry->current_time, get_time());
+    for (int i = 0; i < a_entry->argc; i++) {
+        strcpy(a_entry->argv[i], cmd_arg->file_arg[i]);
+    }
     a_entry->next = NULL;
+
 
     /* modify the linked list of entries */
     pthread_mutex_lock(&entry_mutex); /* get exclusive access to the list */
@@ -606,6 +627,7 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
  * @return entry from the head of the linked list
  */
 entry_t *get_entry() {
+    pthread_mutex_lock(&entry_mutex); /* get exclusive access to entry list */
     entry_t *a_entry; /* pointer to a request */
 
     if (num_entry > 0) {
@@ -624,6 +646,9 @@ entry_t *get_entry() {
         a_entry = NULL;
     }
 
+    /* unlock mutex for other threads */
+    pthread_mutex_unlock(&entry_mutex);
+
     /* return the request to the caller */
     return a_entry;
 }
@@ -637,7 +662,7 @@ entry_t *get_entry() {
  */
 void send_current_process(entry_t *node, char *mem_time, int client_fd) {
     int max_buffer = (num_entry + 1) * MAX_BUFFER;
-    char *buff = (char *) malloc(sizeof(char) * max_buffer);
+    char buff[max_buffer];
     memset(buff, 0, max_buffer);
 
     for (int len = 0; node != NULL && len <= max_buffer; node = node->next) {
@@ -653,7 +678,6 @@ void send_current_process(entry_t *node, char *mem_time, int client_fd) {
     if (!send_str(client_fd, buff)) {
         fprintf(stderr, "error sending current process entries\n");
     }
-    free(buff);
 }
 
 /**
@@ -664,7 +688,7 @@ void send_current_process(entry_t *node, char *mem_time, int client_fd) {
  */
 void send_process_info(entry_t *node, pid_t pid, int client_fd) {
     int max_buffer = (num_entry + 1) * MAX_BUFFER;
-    char *buff = (char *) malloc(sizeof(char) * max_buffer);
+    char buff[max_buffer];
     memset(buff, 0, max_buffer);
 
     for (int len = 0; node != NULL && len <= max_buffer; node = node->next) {
@@ -676,8 +700,6 @@ void send_process_info(entry_t *node, pid_t pid, int client_fd) {
     if (!send_str(client_fd, buff)) {
         fprintf(stderr, "error sending %d's info\n", pid);
     }
-
-    free(buff);
 }
 
 /**
@@ -699,56 +721,49 @@ void kill_overhead_process(entry_t *node, double mem_percent) {
  * @param client_fd socket of client
  * @return the received command argument or NULL if failed
  */
-cmd_t *recv_cmd(int client_fd) {
-    /* allocate memory for the newly created command */
-    cmd_t *cmd_arg = (cmd_t *) malloc(sizeof(cmd_t));
-
+bool recv_cmd(int client_fd, cmd_t *cmd_arg) {
     /* receive type of the command */
-    uint32_t type;
-    if (recv(client_fd, &type, sizeof(type), 0) != sizeof(type)) {
+    uint32_t netLen;
+    if (recv(client_fd, &netLen, sizeof(netLen), 0) != sizeof(netLen)) {
         fprintf(stderr, "recv got invalid size value\n");
-        return NULL;
+        return false;
     }
-    cmd_arg->type = ntohl(type);
+    cmd_arg->type = ntohl(netLen);
 
     /* receive flag size */
-    uint32_t flag_size;
-    if (recv(client_fd, &flag_size, sizeof(flag_size), 0) != sizeof(flag_size)) {
+    if (recv(client_fd, &netLen, sizeof(netLen), 0) != sizeof(netLen)) {
         fprintf(stderr, "recv got invalid size value\n");
-        return NULL;
+        return false;
     }
-    cmd_arg->flag_size = ntohl(flag_size);
+    int flag_size = ntohl(netLen);
+    cmd_arg->flag_size = flag_size;
 
     /* receive all flags */
-    cmd_arg->flag_arg = (flag_t *) malloc(sizeof(flag_t) * 3);
-    for (int i = 0; i < cmd_arg->flag_size; i++) {
+    for (int i = 0; i < flag_size; i++) {
         if (!recv_flag(client_fd, cmd_arg->flag_arg + i)) {
             fprintf(stderr, "error receiving flag argument\n");
-            return NULL;
+            return false;
         };
     }
 
     /* receive file arguments */
     /* receive file size */
-    uint32_t file_size;
-    if (recv(client_fd, &file_size, sizeof(file_size), 0) != sizeof(file_size)) {
+    if (recv(client_fd, &netLen, sizeof(netLen), 0) != sizeof(netLen)) {
         fprintf(stderr, "recv got invalid size value\n");
-        return NULL;
+        return false;
     }
+    int file_size = ntohl(netLen);
+    cmd_arg->file_size = file_size;
 
     /* receive file arguments */
-    cmd_arg->file_size = ntohl(file_size);
-    cmd_arg->file_arg = (char **) malloc(sizeof(char *) * (cmd_arg->file_size + 1));
-    for (int i = 0; i < cmd_arg->file_size; i++) {
-        if (!(cmd_arg->file_arg[i] = recv_str(client_fd))) {
+    for (int i = 0; i < file_size; i++) {
+        if (!recv_str(client_fd, cmd_arg->file_arg[i])) {
             fprintf(stderr, "error receiving file arguments\n");
-            return NULL;
+            return false;
         }
     }
-    /* add null pointer to the end of the array */
-    cmd_arg->file_arg[cmd_arg->file_size] = NULL;
 
-    return cmd_arg;
+    return true;
 }
 
 /**
@@ -761,28 +776,29 @@ cmd_t *recv_cmd(int client_fd) {
  */
 bool recv_flag(int client_fd, flag_t *flag_arg) {
     /* receive type of flag */
-    uint32_t flag_type;
-    if (recv(client_fd, &flag_type, sizeof(flag_type), 0) != sizeof(flag_type)) {
+    uint32_t netLen32;
+    if (recv(client_fd, &netLen32, sizeof(netLen32), 0) != sizeof(netLen32)) {
         fprintf(stderr, "recv got invalid flag type value\n");
         return false;
     }
-    flag_arg->type = ntohl(flag_type);
+    flag_arg->type = ntohl(netLen32);
 
     /* receive flag value */
     /* receive if value exist first */
-    uint16_t value_exist;
-    if (recv(client_fd, &value_exist, sizeof(value_exist), 0) != sizeof(value_exist)) {
+    uint16_t netLen16;
+    if (recv(client_fd, &netLen16, sizeof(netLen16), 0) != sizeof(netLen16)) {
         fprintf(stderr, "recv got invalid exist flag's exist value");
         return false;
     }
-    value_exist = ntohs(value_exist);
+    int value_exist = ntohs(netLen16);
 
     /* receive the flag's value if value exist */
     if (value_exist) {
-        if (!(flag_arg->value = recv_str(client_fd)))
+        if (!recv_str(client_fd, flag_arg->value)) {
             return false;
+        }
     } else {
-        flag_arg->value = NULL;
+        flag_arg->value[0] = 0;
     }
 
     return true;
@@ -793,27 +809,27 @@ bool recv_flag(int client_fd, flag_t *flag_arg) {
  * @param cmd_arg given command argument
  */
 void free_cmd(cmd_t *cmd_arg) {
-    /* free cmd_args elements */
-    /* free file args if exist (mem and mem kill doesn't have file specified) */
-    if (cmd_arg->file_arg) {
-        for (int i = 0; i < cmd_arg->file_size; i++) {
-            free(cmd_arg->file_arg[i]);
-        }
-        free(cmd_arg->file_arg);
-    }
-
-    /* free flag args and its value if exist
-     * Note that some command only has file without flag
-     * Note that some flag doesn't have value (mem) */
-    for (int i = 0; i < cmd_arg->flag_size; i++) {
-        if (cmd_arg->flag_arg[i].value) {
-            free(cmd_arg->flag_arg[i].value);
-        }
-    }
-    free(cmd_arg->flag_arg);
-
-    /* free cmd_arg */
-    free(cmd_arg);
+//    /* free cmd_args elements */
+//    /* free file args if exist (mem and mem kill doesn't have file specified) */
+//    if (cmd_arg->file_arg) {
+//        for (int i = 0; i < cmd_arg->file_size; i++) {
+//            free(cmd_arg->file_arg[i]);
+//        }
+//        free(cmd_arg->file_arg);
+//    }
+//
+//    /* free flag args and its value if exist
+//     * Note that some command only has file without flag
+//     * Note that some flag doesn't have value (mem) */
+//    for (int i = 0; i < cmd_arg->flag_size; i++) {
+//        if (cmd_arg->flag_arg[i].value) {
+//            free(cmd_arg->flag_arg[i].value);
+//        }
+//    }
+//    free(cmd_arg->flag_arg);
+//
+//    /* free cmd_arg */
+//    free(cmd_arg);
 }
 
 /**

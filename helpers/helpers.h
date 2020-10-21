@@ -5,7 +5,7 @@
 #ifndef PROCESS_OVERSEER_HELPERS_H
 #define PROCESS_OVERSEER_HELPERS_H
 #define TIME_BUFFER 20
-#define MAX_BUFFER 512
+#define MAX_BUFFER 256
 #define MAX_ARRAY_SIZE 100
 #define BASE10 10
 #define BASE16 16
@@ -22,7 +22,7 @@ enum flag_type {
 /* create struct for flags */
 typedef struct flag {
     enum flag_type type; /* position of the flag */
-    char *value; /* value of the flag */
+    char value[MAX_BUFFER]; /* value of the flag */
 } flag_t;
 
 /* enum for command type */
@@ -36,9 +36,9 @@ typedef struct cmd {
     uint16_t port;
     struct in_addr host_addr;
     int flag_size;
-    flag_t *flag_arg;
+    flag_t flag_arg[MAX_ARRAY_SIZE];
     int file_size;
-    char **file_arg;
+    char file_arg[MAX_ARRAY_SIZE][MAX_BUFFER];
 } cmd_t;
 
 /* enum for print usage (err vs help) */
@@ -56,7 +56,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg);
 bool send_str(int, char *);
 
 /* receive string over tcp/ip */
-char *recv_str(int);
+bool recv_str(int sock_fd, char *msg);
 
 /* return the current time in %Y-%m-%d %H:%M:%S format */
 char *get_time();

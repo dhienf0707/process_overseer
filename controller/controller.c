@@ -28,13 +28,18 @@ int main(int argc, char **argv) {
     flag_t flag_arg[3];
     cmd_t cmd_arg = {
         .flag_size =  0,
-        .flag_arg =  flag_arg,
+//        .flag_arg =  flag_arg,
         .file_size =  0,
-        .file_arg =  NULL
+//        .file_arg =  NULL
     }; /* store arguments and options */
 
     /* handle the arguments */
     handle_args(argc, argv, &cmd_arg);
+
+//    printf("this is main controller\n");
+//    for (int i = 0; i < argc; i++) {
+//        printf("%s\n", argv[i]);
+//    }
 
     /* set up the socket */
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -60,9 +65,11 @@ int main(int argc, char **argv) {
 
     /* receive the response if cmd type is 2 */
     if (cmd_arg.type == cmd2) {
-        char *ret = recv_str(sock_fd);
+        char ret[MAX_BUFFER];
+        if (!recv_str(sock_fd, ret)) {
+            exit(EXIT_FAILURE);
+        }
         printf("%s", ret);
-        free(ret);
     }
 
     /* close connection and exit */
@@ -130,7 +137,7 @@ void send_flag(int sock_fd, flag_t *flag_arg) {
 
     /* send value */
     /* send if value argument exist (in case of optional argument) */
-    uint16_t value_exist = flag_arg->value ? 1 : 0;
+    uint16_t value_exist = flag_arg->value[0] ? 1 : 0;
     uint16_t netLen = htons(value_exist);
     if (send(sock_fd, &netLen, sizeof(netLen), 0) == -1) {
         perror("send");
