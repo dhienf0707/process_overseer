@@ -609,9 +609,6 @@ entry_t *add_entry(pid_t pid, unsigned int mem, cmd_t *cmd_arg) {
  * @return entry from the head of the linked list
  */
 entry_t *get_entry() {
-    /* get exclusive access to the entry list */
-    pthread_mutex_lock(&entry_mutex);
-
     entry_t *a_entry; /* pointer to a request */
 
     if (num_entry > 0) {
@@ -629,9 +626,6 @@ entry_t *get_entry() {
     } else {
         a_entry = NULL;
     }
-
-    /* unlock mutex for other threads */
-    pthread_mutex_unlock(&entry_mutex);
 
     /* return the request to the caller */
     return a_entry;

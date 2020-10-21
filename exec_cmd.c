@@ -130,13 +130,13 @@ int main(int argc, char **argv) {
         /* convert parent died signal to sigint */
         int r = prctl(PR_SET_PDEATHSIG, SIGINT);
         if (r == -1) {
-            perror(0);
+            perror("prctl");
             exit(1);
         }
         // test in case the original parent exited just
         // before the prctl() call
         if (getppid() == 1)
-            handler(SIGINT, NULL, NULL);
+            raise(SIGINT);
 
         /* log management to logfile if exist */
         if (logFile)
