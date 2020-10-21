@@ -143,7 +143,6 @@ void send_flag(int sock_fd, flag_t flag_arg) {
         exit(EXIT_FAILURE);
     }
 
-    printf("value %s\n", flag_arg.value);
     if (value_exist) {
         if (!send_str(sock_fd, flag_arg.value)) {
             fprintf(stderr, "error sending flag arguments\n");

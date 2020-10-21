@@ -463,7 +463,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
     if (cmd_arg->flag_arg[0].value) {
         pid_t mem_pid;
         if (!(mem_pid = strtol(cmd_arg->flag_arg[0].value, NULL, 10))) {
-            fprintf(stderr, "invalid pid");
+            fprintf(stderr, "invalid pid\n");
             return;
         }
         send_process_info(entry, mem_pid, client_fd);
