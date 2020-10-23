@@ -176,13 +176,11 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
                 isFlag = true; /* set command set 1 to true */
                 lFlag = optind - 1;  /* set the position of lflag */
-                cmd1_args += 2; /* increment argument counter for command set 1*/
-
-                /* if out flag is already created before its next flag is going to be log flag*/
+                cmd1_args += 2; /* increment argument counter for command set 1 */
 
 
                 /* check if time flag exists or if
-                 * there is anything between log flag and output flag if output flag exists*/
+                 * there is anything between log flag and output flag if output flag exists */
                 if (tFlag || (oFlag && oFlag != lFlag - 2)) {
                     print_usage("Wrong command syntax", error);
                     exit(EXIT_FAILURE);
@@ -202,7 +200,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
                 /* check if there is anything between the time flag and any other previous flags */
                 if (oFlag && lFlag) { /* if output flag and log flag exist */
-                    if (oFlag != tFlag - 4 && lFlag != tFlag - 2) { /* check if it's in right order */
+                    if (oFlag != tFlag - 4 || lFlag != tFlag - 2) { /* check if it's in right order */
                         print_usage("Wrong command syntax", error);
                         exit(EXIT_FAILURE);
                     }

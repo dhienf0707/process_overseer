@@ -407,19 +407,15 @@ void process_cmd1(cmd_t *cmd_arg) {
             }
         }
 
+        /* copy the option flags and file arguments into the argument array */
         int arg_size = cmd_arg->file_size + 5;
-        char *args[arg_size + 1];
-        args[0] = "./exec";
-        args[1] = exec_timeout;
-        args[2] = term_timeout;
-        args[3] = outFile;
-        args[4] = logFile;
-
+        char *args[] = {"./exec", exec_timeout, term_timeout, outFile, logFile};
         for (int i = 5; i < arg_size; i++) {
             args[i] = cmd_arg->file_arg[i - 5];
         }
         args[arg_size] = NULL;
 
+        /* exec the given file with given option flags */
         execv(args[0], args);
 
         _exit(EXIT_SUCCESS);
