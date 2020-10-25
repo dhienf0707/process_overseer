@@ -22,11 +22,11 @@ Fill the below with your student IDs, names, and contribution description.
 
 ID: n10329935
 name: Do Viet Hoang
-contribution: A, C, E
+contribution: A, C, Makefile
 
 ID: n10327622
 name: Duc Hien Nguyen
-contribution: B, D, Makefile
+contribution: B, D, E
 
 Comments: nice
 

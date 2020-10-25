@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 #include <memory.h>
 #include <errno.h>
 #include <signal.h>
@@ -18,14 +17,9 @@
 #include <pty.h>
 #include <utmp.h>
 
-typedef struct data {
-    int fd;
-    FILE *file;
-} data_t;
-
 pid_t pid = 0; /* pid to store the pid of the children */
 pthread_t tid; /* store tid of the thread */
-FILE *outFile, *logFile;
+FILE *outFile, *logFile; /* outfile and logfile stream */
 
 /**
  * signal handler
@@ -53,11 +47,8 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
  * @param data data passed from thread
  */
 void exec_output(void *data) {
-    /* cast to data struct */
-    data_t *recv_data = (data_t *) data;
     /* master file descriptor */
-    int master = recv_data->fd;
-    FILE *outFile = recv_data->file;
+    int master = *(int *) data;
 
     /* set timeout to 1 millisecond */
     struct timeval timeout = {
@@ -173,7 +164,6 @@ int main(int argc, char **argv) {
     int buf, n;
     int pipe_fds[2];
     pipe2(pipe_fds, O_CLOEXEC);
-    bool executed = false;
 
     /* block child terminating signal before forking in case the child terminated
      * before being consumed by sigtimedwait */
@@ -192,7 +182,7 @@ int main(int argc, char **argv) {
         login_tty(slave);
         close(master);
 
-        /* close the reading side of the pipe*/
+        /* close the reading side of the pipe */
         close(pipe_fds[0]);
 
         /* execute the file */
@@ -216,22 +206,14 @@ int main(int argc, char **argv) {
     /* wait 1 seconds before continuing */
     sleep(1);
 
-    /* create a thread for writing output for the exec process */
-    /* set up file descriptors to be passed in the thread routine */
-    data_t data = {
-            .fd = master,
-            .file = outFile
-    };
-    /* create thread */
-    pthread_create(&tid, NULL, (void *(*)(void *)) exec_output, &data);
+    /* create a thread and pass in master file descriptor
+     * for writing output for the exec process */
+    pthread_create(&tid, NULL, (void *(*)(void *)) exec_output, &master);
 
     /* get the pipe's data to know if there's any error occurred with execv */
-    close(pipe_fds[1]);
+    close(pipe_fds[1]); /* close the writing side of the pipe */
     n = read(pipe_fds[0], &buf, sizeof(buf));
     if (n == 0) { /* nothing in pipe -> successfully executed */
-        /* change executed to true */
-        executed = true;
-
         /* inform of successful execution */
         fprintf(logFile, "%s - %s has been executed with pid %d\n",
                 get_time(), file_args, pid);
@@ -245,10 +227,7 @@ int main(int argc, char **argv) {
                 get_time(), file_args, strerror(buf));
 
         /* clean up and exit */
-        fclose(outFile);
-        fclose(logFile);
-        pthread_join(tid, NULL);
-        exit(EXIT_SUCCESS);
+        goto exit;
     }
     close(pipe_fds[0]);
 
@@ -284,11 +263,8 @@ int main(int argc, char **argv) {
             perror("waitpid");
         }
     } else if (result > 0) { /* child has finished */
-        if (executed) {
-
             fprintf(logFile, "%s - %d has terminated with status code %d\n",
                     get_time(), pid, WEXITSTATUS(status));
-        }
     } else {
         perror("waitpid");
     }

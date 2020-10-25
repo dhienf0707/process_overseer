@@ -65,6 +65,12 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
         exit(EXIT_FAILURE);
     }
 
+    /* get the port from second argument */
+    if (!(port = strtol(argv[2], NULL, BASE10))) {
+        print_usage("Port must between 1 to 65535", error);
+        exit(EXIT_FAILURE);
+    }
+    
     /* get the address */
     if ((he = gethostbyname(argv[1])) == NULL) {
         herror("gethostbyname\n");
@@ -72,11 +78,6 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     }
     cmd_arg->host_addr = *((struct in_addr *) he->h_addr);
 
-    /* get the port from second argument */
-    if (!(port = strtol(argv[2], NULL, BASE10))) {
-        print_usage("Port must between 1 to 65535", error);
-        exit(EXIT_FAILURE);
-    }
 
     cmd_arg->port = port;
 

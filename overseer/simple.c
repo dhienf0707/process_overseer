@@ -16,7 +16,6 @@ int main(int argc, char **argv) {
 
     int sleep_time = argc >= 2 ? atoi(argv[1]) : 0;
     printf("Hello World. In %d seconds I will terminate with a status code 5\n", sleep_time);
-    fflush(stdout);
     sleep(1);
     printf("The list of arg: ");
     for (int i = 0; i < argc; i++) {
