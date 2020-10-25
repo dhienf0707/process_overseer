@@ -124,7 +124,7 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
             free(a_request);
         }
 
-        /* free memory of entry and kill all processes (in case sigint isn't sent to exec_cmd) */
+        /* free memory of entry and forcefully kill all processes */
         entry_t *a_entry;
         while ((a_entry = get_entry())) {
             kill(a_entry->pid, SIGKILL);

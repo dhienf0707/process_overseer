@@ -15,8 +15,8 @@ controller:
 	gcc $(CC_FLAGS) $(controller) -I. -o $@
 
 exec:
-	gcc $(CC_FLAGS) $(exec) -I. -o $@
+	gcc $(CC_FLAGS) $(exec) -lpthread -lutil -I. -o $@
 
 .PHONY: clean
 clean:
-	@rm -f $(OBJ) *.o *.exe overseer controller exec
+	@rm -f $(OBJ) *.o *.txt overseer controller exec

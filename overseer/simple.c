@@ -7,7 +7,7 @@
 #define MB 1e6
 
 int main(int argc, char **argv) {
-    //signal(SIGTERM, SIG_IGN);
+//    signal(SIGTERM, SIG_IGN);
 
 //    printf("%s\n", argv[2]);
     int megs = argc >= 3 ? atoi(argv[2]) : 1;
