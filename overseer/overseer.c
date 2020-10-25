@@ -56,7 +56,7 @@ void process_cmd3(cmd_t *cmd_arg);
 /* get child pid*/
 int get_child_pid(pid_t pid);
 
-/* create request struct */
+/* entry  struct */
 typedef struct entry {
     pid_t pid;
     char current_time[TIME_BUFFER];
@@ -124,8 +124,10 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
             free(a_request);
         }
 
+        /* free memory of entry and forcefully kill all processes */
         entry_t *a_entry;
         while ((a_entry = get_entry())) {
+            kill(a_entry->pid, SIGKILL);
             free(a_entry);
         }
     }
@@ -366,6 +368,7 @@ void *handle_requests_loop(void *data) {
             free(a_request);
         }
     }
+    return NULL;
 }
 
 /**
@@ -404,19 +407,15 @@ void process_cmd1(cmd_t *cmd_arg) {
             }
         }
 
+        /* copy the option flags and file arguments into the argument array */
         int arg_size = cmd_arg->file_size + 5;
-        char *args[arg_size + 1];
-        args[0] = "./exec";
-        args[1] = exec_timeout;
-        args[2] = term_timeout;
-        args[3] = outFile;
-        args[4] = logFile;
-
+        char *args[] = {"./exec", exec_timeout, term_timeout, outFile, logFile};
         for (int i = 5; i < arg_size; i++) {
             args[i] = cmd_arg->file_arg[i - 5];
         }
         args[arg_size] = NULL;
 
+        /* exec the given file with given option flags */
         execv(args[0], args);
 
         _exit(EXIT_SUCCESS);
@@ -460,7 +459,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
     if (cmd_arg->flag_arg[0].value) {
         pid_t mem_pid;
         if (!(mem_pid = strtol(cmd_arg->flag_arg[0].value, NULL, 10))) {
-            fprintf(stderr, "invalid pid");
+            fprintf(stderr, "invalid pid\n");
             return;
         }
         send_process_info(entry, mem_pid, client_fd);
@@ -471,7 +470,7 @@ void process_cmd2(cmd_t *cmd_arg, int client_fd) {
         strcpy(mem_time, get_time()); /* store current time */
 
         /* offset 1 second */
-        struct tm tm_info;
+        struct tm tm_info = {0};
         strptime(mem_time, "%Y-%m-%d %H:%M:%S", &tm_info);
         tm_info.tm_sec -= 1;
         mktime(&tm_info);
@@ -832,10 +831,16 @@ int get_child_pid(pid_t pid) {
         perror("popen");
         return 0;
     }
-    fgets(str_pid, sizeof(str_pid), cmd);
+
+    if (!fgets(str_pid, sizeof(str_pid), cmd)) {
+        pclose(cmd);
+        return 0;
+    }
+
+
     int child_pid;
     if (!(child_pid = strtol(str_pid, NULL, BASE10))) {
-        fprintf(stderr, "No child process found!\n");
+        pclose(cmd);
         return 0;
     }
     pclose(cmd);

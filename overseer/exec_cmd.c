@@ -3,6 +3,7 @@
 //
 #define _GNU_SOURCE
 
+#include <sys/prctl.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -41,7 +42,8 @@ void handler(int sig, siginfo_t *siginfo, void *context) {
  * @return exit successfully or failed
  */
 int main(int argc, char **argv) {
-    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0); /* set no buffer for stdout */
+    setvbuf(stderr, NULL, _IONBF, 0); /* set no buffer for stderr */
 
     /* exec and termination time out */
     struct timespec exec_timeout = {
@@ -92,12 +94,6 @@ int main(int argc, char **argv) {
     if (pid == -1) {
         perror("fork");
     } else if (pid == 0) { /* child */
-        /* set pgid so that sigint doesn't interrupt the child */
-        setpgid(0, 0);
-
-        /* ignore SIGINT */
-        signal(SIGINT, SIG_IGN);
-
         /* duplicate outfile descriptor onto stdout and stdin if exist */
         if (outFile) {
             dup2(outFile, STDOUT_FILENO);
@@ -116,15 +112,14 @@ int main(int argc, char **argv) {
         /* send error code if exec failed */
         _exit(errno);
     } else { /* parent */
-
-        /* add int, usr1 handler */
+        /* add int handler */
         struct sigaction sa;
         sigemptyset(&sa.sa_mask);
         sa.sa_sigaction = handler;
         sa.sa_flags = SA_SIGINFO;
         sigaction(SIGINT, &sa, NULL);
 
-        /* set of signal to wait for */
+        /* set of signal to block and wait for (signal from child) */
         sigset_t set;
         sigemptyset(&set);
         sigaddset(&set, SIGCHLD);
@@ -132,6 +127,17 @@ int main(int argc, char **argv) {
         /* block child signal in case child terminated  and send signal before
          * sleeping and being consumed by sigtimedwait */
         sigprocmask(SIG_BLOCK, &set, NULL);
+
+        /* convert parent died signal to sigint */
+        int r = prctl(PR_SET_PDEATHSIG, SIGINT);
+        if (r == -1) {
+            perror("prctl");
+            exit(1);
+        }
+        // test in case the original parent exited just
+        // before the prctl() call
+        if (getppid() == 1)
+            raise(SIGINT);
 
         /* log management to logfile if exist */
         if (logFile)
@@ -158,6 +164,8 @@ int main(int argc, char **argv) {
         } else {
             printf("%s - could not execute %s - Error: %s\n",
                    get_time(), file_args, strerror(buf));
+            close(logFile);
+            exit(EXIT_SUCCESS);
         }
         close(pipe_fds[0]);
 
@@ -204,7 +212,6 @@ int main(int argc, char **argv) {
         }
 
         close(logFile);
-
         exit(EXIT_SUCCESS);
     }
 }

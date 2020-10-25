@@ -11,10 +11,10 @@
 #include <arpa/inet.h>
 
 /* send cmd from client to server*/
-void send_cmd(int, cmd_t *);
+void send_cmd(int, cmd_t);
 
 /* send flag from client to server */
-void send_flag(int, flag_t *);
+void send_flag(int, flag_t);
 
 /**
  * main method
@@ -25,13 +25,24 @@ void send_flag(int, flag_t *);
 int main(int argc, char **argv) {
     int sock_fd; /* socket file descriptor */
     struct sockaddr_in serverAddr; /* server address's information */
-    flag_t flag_arg[3];
+
+    /* set up command arguments */
+    /* initialize flag_t struct */
+    flag_t flag_arg[MAX_FLAG_SIZE];
+    char buff[MAX_FLAG_SIZE][MAX_BUFFER] = {[0 ... MAX_FLAG_SIZE - 1] = "\0"};
+    for (int i = 0; i < MAX_FLAG_SIZE; i++) {
+        flag_arg[i].type = 0;
+        flag_arg[i].value = buff[i];
+    }
+    /* initialize cmd_t struct */
     cmd_t cmd_arg = {
+        .type = 0,
         .flag_size =  0,
         .flag_arg =  flag_arg,
         .file_size =  0,
-        .file_arg =  NULL
-    }; /* store arguments and options */
+        .file_arg =  NULL,
+        .port = 0,
+    };
 
     /* handle the arguments */
     handle_args(argc, argv, &cmd_arg);
@@ -56,11 +67,14 @@ int main(int argc, char **argv) {
     }
 
     /* send command set to server */
-    send_cmd(sock_fd, &cmd_arg);
+    send_cmd(sock_fd, cmd_arg);
 
     /* receive the response if cmd type is 2 */
     if (cmd_arg.type == cmd2) {
-        char *ret = recv_str(sock_fd);
+        char *ret;
+        if (!(ret = recv_str(sock_fd))) {
+            exit(EXIT_FAILURE);
+        }
         printf("%s", ret);
         free(ret);
     }
@@ -75,10 +89,9 @@ int main(int argc, char **argv) {
  * @param sock_fd server socket
  * @param cmd_arg command argument
  */
-void send_cmd(int sock_fd, cmd_t *cmd_arg) {
+void send_cmd(int sock_fd, cmd_t cmd_arg) {
     /* send command type */
-
-    uint32_t type = htonl(cmd_arg->type);
+    uint32_t type = htonl(cmd_arg.type);
     if (send(sock_fd, &type, sizeof(type), 0) == -1) {
         perror("send");
         exit(EXIT_FAILURE);
@@ -86,7 +99,7 @@ void send_cmd(int sock_fd, cmd_t *cmd_arg) {
 
     /* send flags */
     /* send flag size */
-    uint32_t flag_size = htonl(cmd_arg->flag_size);
+    uint32_t flag_size = htonl(cmd_arg.flag_size);
     if (send(sock_fd, &flag_size, sizeof(flag_size), 0) == -1) {
         perror("send");
         exit(EXIT_FAILURE);
@@ -94,21 +107,21 @@ void send_cmd(int sock_fd, cmd_t *cmd_arg) {
 
     /* send flags arguments */
     /* send if flag exist or not */
-    for (int i = 0; i < cmd_arg->flag_size; i++) {
-        if (cmd_arg->flag_arg) send_flag(sock_fd, cmd_arg->flag_arg + i);
+    for (int i = 0; i < cmd_arg.flag_size; i++) {
+        send_flag(sock_fd, cmd_arg.flag_arg[i]);
     }
 
     /* send file arguments */
     /* send file size */
-    uint32_t file_size = htonl(cmd_arg->file_size);
+    uint32_t file_size = htonl(cmd_arg.file_size);
     if (send(sock_fd, &file_size, sizeof(file_size), 0) == -1) {
         perror("send");
         exit(EXIT_FAILURE);
     }
 
     /* send file arguments */
-    for (int i = 0; i < cmd_arg->file_size; i++) {
-        if (!send_str(sock_fd, cmd_arg->file_arg[i])) {
+    for (int i = 0; i < cmd_arg.file_size; i++) {
+        if (!send_str(sock_fd, cmd_arg.file_arg[i])) {
             fprintf(stderr, "error sending file arguments\n");
             exit(EXIT_FAILURE);
         }
@@ -120,9 +133,9 @@ void send_cmd(int sock_fd, cmd_t *cmd_arg) {
  * @param sock_fd server socket
  * @param flag_arg flag argument
  */
-void send_flag(int sock_fd, flag_t *flag_arg) {
+void send_flag(int sock_fd, flag_t flag_arg) {
     /* send type */
-    uint32_t type = htonl(flag_arg->type);
+    uint32_t type = htonl(flag_arg.type);
     if (send(sock_fd, &type, sizeof(type), 0) == -1) {
         perror("send");
         exit(EXIT_FAILURE);
@@ -130,7 +143,7 @@ void send_flag(int sock_fd, flag_t *flag_arg) {
 
     /* send value */
     /* send if value argument exist (in case of optional argument) */
-    uint16_t value_exist = flag_arg->value ? 1 : 0;
+    uint16_t value_exist = flag_arg.value[0] ? 1 : 0;
     uint16_t netLen = htons(value_exist);
     if (send(sock_fd, &netLen, sizeof(netLen), 0) == -1) {
         perror("send");
@@ -138,7 +151,7 @@ void send_flag(int sock_fd, flag_t *flag_arg) {
     }
 
     if (value_exist) {
-        if (!send_str(sock_fd, flag_arg->value)) {
+        if (!send_str(sock_fd, flag_arg.value)) {
             fprintf(stderr, "error sending flag arguments\n");
             exit(EXIT_FAILURE);
         }

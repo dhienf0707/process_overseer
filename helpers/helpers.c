@@ -43,6 +43,13 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
     struct hostent *he; /* host entry */
     uint16_t port; /* host's port */
 
+    
+    /* if not help there must be at least 4 arguments */
+    if (argc < 2) {
+        print_usage("Too few arguments", error);
+        exit(EXIT_FAILURE);
+    }
+
     /* if there is only 2 argument and it's --help */
     if (strcmp(argv[1], "--help") == 0) {
         if (argc == 2) {
@@ -53,8 +60,6 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             exit(EXIT_FAILURE);
         }
     }
-
-    /* if not help there must be at least 4 arguments */
     if (argc < 4) {
         print_usage("Too few arguments", error);
         exit(EXIT_FAILURE);
@@ -80,11 +85,10 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
         /* set up mem flag's value */
         cmd_arg->type = cmd2;
         cmd_arg->flag_arg->type = mem;
-        cmd_arg->flag_arg->value = NULL;
         cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the optional argument */
-            cmd_arg->flag_arg->value = argv[4];
+            strcpy(cmd_arg->flag_arg->value, argv[4]);
         }
 
         /* return */
@@ -97,11 +101,10 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
         /* setup mem kill flag */
         cmd_arg->type = cmd3;
         cmd_arg->flag_arg->type = memkill;
-        cmd_arg->flag_arg->value = NULL;
         cmd_arg->flag_size++;
 
         if (argv[4]) { /* get the required argument */
-            cmd_arg->flag_arg->value = argv[4];
+            strcpy(cmd_arg->flag_arg->value, argv[4]);
         } else {
             print_usage("Please specify percentage for memkill", error);
             exit(EXIT_FAILURE);
@@ -118,6 +121,14 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     /* When we get here we know that cmd set 2 and 3 is not set, we only consider cmd set 1 */
 
+    /* we need to make a copy of argv in case the original argv changed order after get opttion flag */
+    char buff[argc][MAX_BUFFER];
+    char *argv_cpy[argc];
+    for (int i = 0; i < argc; i++) {
+        strcpy(buff[i], argv[i]);
+        argv_cpy[i] = buff[i];
+    }
+
     opterr = 0; /* disable error message for get opt in case there is argument from the executable file */
     int ch; /* character value when iterating through argv */
     bool isFlag = false; /* track if any flag in the first command group is set */
@@ -129,19 +140,19 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
     flag_t *first_arg = cmd_arg->flag_arg; /* head of flag_arg array */
 
-    /* option string for get opt method*/
+    /* option string for get opt method */
     const char *const short_options = "o:t:";
     static struct option long_options[] = {
             {"log", required_argument, NULL, 'l'},
             {NULL, 0,                  NULL, 0}
     };
 
-    while ((ch = getopt_long_only(argc, argv, short_options, long_options, NULL)) != -1) {
+    while ((ch = getopt_long_only(argc, argv_cpy, short_options, long_options, NULL)) != -1) {
         switch (ch) {
             case 'o':
                 /* create flag for output */
                 cmd_arg->flag_arg->type = o;
-                cmd_arg->flag_arg->value = optarg;
+                strcpy(cmd_arg->flag_arg->value, optarg);
                 cmd_arg->flag_arg++;
                 cmd_arg->flag_size++;
 
@@ -159,19 +170,17 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             case 'l':
                 /* create flag for log */
                 cmd_arg->flag_arg->type = log;
-                cmd_arg->flag_arg->value = optarg;
+                strcpy(cmd_arg->flag_arg->value, optarg);
                 cmd_arg->flag_arg++;
                 cmd_arg->flag_size++;
 
                 isFlag = true; /* set command set 1 to true */
                 lFlag = optind - 1;  /* set the position of lflag */
-                cmd1_args += 2; /* increment argument counter for command set 1*/
-
-                /* if out flag is already created before its next flag is going to be log flag*/
+                cmd1_args += 2; /* increment argument counter for command set 1 */
 
 
                 /* check if time flag exists or if
-                 * there is anything between log flag and output flag if output flag exists*/
+                 * there is anything between log flag and output flag if output flag exists */
                 if (tFlag || (oFlag && oFlag != lFlag - 2)) {
                     print_usage("Wrong command syntax", error);
                     exit(EXIT_FAILURE);
@@ -181,7 +190,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
             case 't':
                 /* create flag for time */
                 cmd_arg->flag_arg->type = t;
-                cmd_arg->flag_arg->value = optarg;
+                strcpy(cmd_arg->flag_arg->value, optarg);
                 cmd_arg->flag_arg++;
                 cmd_arg->flag_size++;
 
@@ -191,7 +200,7 @@ void handle_args(int argc, char **argv, cmd_t *cmd_arg) {
 
                 /* check if there is anything between the time flag and any other previous flags */
                 if (oFlag && lFlag) { /* if output flag and log flag exist */
-                    if (oFlag != tFlag - 4 && lFlag != tFlag - 2) { /* check if it's in right order */
+                    if (oFlag != tFlag - 4 || lFlag != tFlag - 2) { /* check if it's in right order */
                         print_usage("Wrong command syntax", error);
                         exit(EXIT_FAILURE);
                     }
