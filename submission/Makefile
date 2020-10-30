@@ -19,4 +19,4 @@ exec:
 
 .PHONY: clean
 clean:
-	@rm -f $(OBJ) *.o *.txt overseer controller exec
+	@rm -f $(OBJ) *.o overseer controller exec
