@@ -1,0 +1,18 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/hoangqwe159/process_overseer/overseer/simple.c
+stdio.h
+-
+unistd.h
+-
+stdlib.h
+-
+signal.h
+-
+

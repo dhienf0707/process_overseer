@@ -1,0 +1,1 @@
+/usr/bin/cc -g   CMakeFiles/overseer.dir/overseer.c.o  -o overseer  ../helpers/libhelpers.a -lpthread 
