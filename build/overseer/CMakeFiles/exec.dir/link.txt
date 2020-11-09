@@ -1,1 +1,0 @@
-/usr/bin/cc -g   CMakeFiles/exec.dir/exec_cmd.c.o  -o exec  ../helpers/libhelpers.a 
