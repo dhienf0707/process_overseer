@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(process_overseer C)
 
 set(CMAKE_C_STANDARD 99)
+set(CMAKE_MAKE_PROGRAM ninja)
+set(CMAKE_C_COMPILER clang)
 
 # Find pthread library
 find_package(Threads)
@@ -10,5 +12,3 @@ find_package(Threads)
 add_subdirectory(helpers)
 add_subdirectory(overseer)
 add_subdirectory(controller)
-add_executable(test test.c)
-target_link_libraries(test helpers Threads::Threads)
