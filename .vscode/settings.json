@@ -1,0 +1,13 @@
+{
+    "cmake.debugConfig": {
+        "args": [
+            "3000"
+        ]
+    },
+    "cmake.runConfig" : {
+        "args": [
+            "3000"
+        ]
+    },
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+}

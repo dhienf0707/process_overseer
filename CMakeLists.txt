@@ -3,7 +3,6 @@ project(process_overseer C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_MAKE_PROGRAM ninja)
-set(CMAKE_C_COMPILER clang)
 
 # Find pthread library
 find_package(Threads)
